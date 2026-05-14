@@ -55,8 +55,8 @@ Before typing begins, all modifier keys (Ctrl, Shift, Alt) are programmatically 
 git clone https://github.com/unpaved028/ClipTyper.git
 cd ClipTyper
 
-# Portable (self-contained, trimmed, compressed)
-dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:EnableCompressionInSingleFile=true
+# Portable (self-contained, compressed)
+dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:EnableCompressionInSingleFile=true
 
 # Slim (framework-dependent, requires .NET 8 runtime)
 dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true

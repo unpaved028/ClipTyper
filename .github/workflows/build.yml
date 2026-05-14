@@ -1,4 +1,4 @@
-﻿name: Build & Release ClipTyper
+name: Build & Release ClipTyper
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Publish self-contained
-        run: dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:EnableCompressionInSingleFile=true -o ./publish-selfcontained
+        run: dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:EnableCompressionInSingleFile=true -o ./publish-selfcontained
 
       - name: Rename self-contained exe
         run: Rename-Item ./publish-selfcontained/ClipTyper.exe ClipTyper-Portable.exe
