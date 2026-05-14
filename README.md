@@ -6,7 +6,7 @@ A lightweight, portable Windows tool that types clipboard text as simulated keyb
 
 ## ⬇️ Download
 
-**[Download ClipTyper.exe](https://github.com/renejungit/ClipTyper/releases/latest/download/ClipTyper.exe)** — single file, no installation required.
+**[Download ClipTyper.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper.exe)** — single file, no installation required.
 
 ## Features
 
@@ -46,7 +46,7 @@ Before typing begins, all modifier keys (Ctrl, Shift, Alt) are programmatically 
 
 ```bash
 # Clone
-git clone https://github.com/renejungit/ClipTyper.git
+git clone https://github.com/unpaved028/ClipTyper.git
 cd ClipTyper
 
 # Build portable single-file exe
