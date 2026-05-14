@@ -1,13 +1,13 @@
-name: Build & Release ClipTyper
+﻿name: Build & Release ClipTyper
 
 on:
   push:
     tags:
-      - 'v*'           # Triggers on version tags like v1.0.0
-  workflow_dispatch:    # Allows manual trigger from GitHub UI
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
-  contents: write       # Needed to create releases
+  contents: write
 
 jobs:
   build:
@@ -22,33 +22,18 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish single-file executable
-        run: dotnet publish -c Release -r win-x64 --self-contained false -o ./publish
+      - name: Publish self-contained
+        run: dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:EnableCompressionInSingleFile=true -o ./publish-selfcontained
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ClipTyper
-          path: ./publish/ClipTyper.exe
+      - name: Rename self-contained exe
+        run: Rename-Item ./publish-selfcontained/ClipTyper.exe ClipTyper-Portable.exe
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ./publish/ClipTyper.exe
-          generate_release_notes: true
-� Framework-dependent build (requires .NET 8 runtime on target) ──
       - name: Publish framework-dependent
-        run: >
-          dotnet publish -c Release -r win-x64
-          --self-contained false
-          /p:PublishSingleFile=true
-          -o ./publish-slim
+        run: dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true -o ./publish-slim
 
       - name: Rename framework-dependent exe
         run: Rename-Item ./publish-slim/ClipTyper.exe ClipTyper-Slim.exe
 
-      # ── Upload artifacts (always available for download) ──
       - name: Upload self-contained artifact
         uses: actions/upload-artifact@v4
         with:
@@ -61,21 +46,11 @@ jobs:
           name: ClipTyper-Slim
           path: ./publish-slim/ClipTyper-Slim.exe
 
-      # ── Create GitHub Release with both variants ──
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
             ./publish-selfcontained/ClipTyper-Portable.exe
             ./publish-slim/ClipTyper-Slim.exe
-          generate_release_notes: true
-          body: |
-            ## Downloads
-
-            | Datei | Beschreibung | .NET Runtime nötig? |
-            |---|---|---|
-            | **ClipTyper-Portable.exe** | Enthält die .NET Runtime – läuft sofort überall | ❌ Nein |
-            | **ClipTyper-Slim.exe** | Kleinere Datei, benötigt installierte .NET 8 Runtime | ✅ Ja |
-
-            > 💡 **Unsicher?** Nimm **ClipTyper-Portable.exe** – die funktioniert auf jedem Windows 10/11 (x64) ohne weitere Installation.
