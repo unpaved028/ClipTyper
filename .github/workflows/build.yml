@@ -23,7 +23,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Publish single-file executable
-        run: dotnet publish -c Release -r win-x64 --self-contained true -o ./publish
+        run: dotnet publish -c Release -r win-x64 --self-contained false -o ./publish
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -37,3 +37,45 @@ jobs:
         with:
           files: ./publish/ClipTyper.exe
           generate_release_notes: true
+� Framework-dependent build (requires .NET 8 runtime on target) ──
+      - name: Publish framework-dependent
+        run: >
+          dotnet publish -c Release -r win-x64
+          --self-contained false
+          /p:PublishSingleFile=true
+          -o ./publish-slim
+
+      - name: Rename framework-dependent exe
+        run: Rename-Item ./publish-slim/ClipTyper.exe ClipTyper-Slim.exe
+
+      # ── Upload artifacts (always available for download) ──
+      - name: Upload self-contained artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipTyper-Portable
+          path: ./publish-selfcontained/ClipTyper-Portable.exe
+
+      - name: Upload framework-dependent artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipTyper-Slim
+          path: ./publish-slim/ClipTyper-Slim.exe
+
+      # ── Create GitHub Release with both variants ──
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./publish-selfcontained/ClipTyper-Portable.exe
+            ./publish-slim/ClipTyper-Slim.exe
+          generate_release_notes: true
+          body: |
+            ## Downloads
+
+            | Datei | Beschreibung | .NET Runtime nötig? |
+            |---|---|---|
+            | **ClipTyper-Portable.exe** | Enthält die .NET Runtime – läuft sofort überall | ❌ Nein |
+            | **ClipTyper-Slim.exe** | Kleinere Datei, benötigt installierte .NET 8 Runtime | ✅ Ja |
+
+            > 💡 **Unsicher?** Nimm **ClipTyper-Portable.exe** – die funktioniert auf jedem Windows 10/11 (x64) ohne weitere Installation.

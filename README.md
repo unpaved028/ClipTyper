@@ -6,12 +6,17 @@ A lightweight, portable Windows tool that types clipboard text as simulated keyb
 
 ## ⬇️ Download
 
-**[Download ClipTyper.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper.exe)** — single file, no installation required.
+| Variante | Beschreibung | .NET Runtime nötig? | Download |
+|---|---|---|---|
+| **Portable** | Enthält die .NET Runtime – läuft sofort überall | ❌ Nein | **[ClipTyper-Portable.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Portable.exe)** |
+| **Slim** | Kleinere Datei, benötigt installierte .NET 8 Runtime | ✅ [Runtime installieren](https://dotnet.microsoft.com/download/dotnet/8.0/runtime) | **[ClipTyper-Slim.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Slim.exe)** |
+
+> 💡 **Unsicher welche Version?** Nimm **Portable** – die funktioniert auf jedem Windows 10/11 (x64) ohne weitere Installation.
 
 ## Features
 
 - 🎯 **Paste anywhere** — works in RDP sessions, KVM consoles, web terminals, and password fields that block clipboard paste
-- 📦 **Fully portable** — single `.exe`, no installation, no .NET runtime needed
+- 📦 **Fully portable** — single `.exe`, no installation needed
 - 🔒 **No admin rights** — runs entirely in user-space
 - ⌨️ **Hardware-level input** — uses `SendInput` with Unicode characters, not `SendKeys`
 - 🕐 **Reliable timing** — configurable delays ensure no characters are dropped
@@ -39,7 +44,8 @@ Before typing begins, all modifier keys (Ctrl, Shift, Alt) are programmatically 
 ## System Requirements
 
 - Windows 10/11 (x64)
-- No .NET runtime required (self-contained)
+- **Portable Version:** No additional requirements
+- **Slim Version:** [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime) required
 - No administrator privileges required
 
 ## Building from Source
@@ -49,10 +55,11 @@ Before typing begins, all modifier keys (Ctrl, Shift, Alt) are programmatically 
 git clone https://github.com/unpaved028/ClipTyper.git
 cd ClipTyper
 
-# Build portable single-file exe
-dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+# Portable (self-contained, trimmed, compressed)
+dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=true /p:EnableCompressionInSingleFile=true
 
-# Output: bin/Release/net8.0-windows/win-x64/publish/ClipTyper.exe
+# Slim (framework-dependent, requires .NET 8 runtime)
+dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true
 ```
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building.
