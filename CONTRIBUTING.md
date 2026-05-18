@@ -15,10 +15,10 @@ Since ClipTyper interacts with the Windows API and relies on `SendInput`, we enc
 ### How to compile the portable executable
 To build the lightweight, framework-dependent version (approx. 2MB) of ClipTyper, clone this repository and run the following command in the project root:
 
-# Portable (self-contained, single-file, compressed)
+#### Portable (self-contained, single-file, compressed)
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:EnableCompressionInSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
 
-# Slim (framework-dependent, requires .NET 8 Desktop Runtime)
+#### Slim (framework-dependent, requires .NET 8 Desktop Runtime)
 dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true
 
 The resulting ClipTyper.exe will be located in the \bin\Release\net8.0-windows\win-x64\publish\ directory.
