@@ -62,6 +62,8 @@ namespace ClipTyper
             return SystemIcons.Application;
         }
 
+        public int PasteDelaySeconds { get; set; } = 3;
+
         public ClipTyperContext()
         {
             _trayIcon = new NotifyIcon()
@@ -72,6 +74,9 @@ namespace ClipTyper
                 Text = "ClipTyper"
             };
 
+            _trayIcon.MouseClick += OnTrayIconClick;
+
+            _trayIcon.ContextMenuStrip.Items.Add("Set Paste Delay...", null, OnSetDelay);
             _trayIcon.ContextMenuStrip.Items.Add("About", null, OnAbout);
             _trayIcon.ContextMenuStrip.Items.Add("Exit", null, OnExit);
 
@@ -83,7 +88,53 @@ namespace ClipTyper
             _hotkey = new GlobalHotkey(_hiddenForm.Handle, HotkeyId, GlobalHotkey.Modifiers.Control | GlobalHotkey.Modifiers.Shift, Keys.T);
         }
 
+        private void OnTrayIconClick(object? sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                TriggerPaste(PasteDelaySeconds * 1000);
+            }
+        }
+
+        private void OnSetDelay(object? sender, EventArgs e)
+        {
+            using var form = new Form()
+            {
+                Width = 270,
+                Height = 130,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                Text = "Set Paste Delay",
+                StartPosition = FormStartPosition.CenterScreen,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+            var label = new Label() { Left = 20, Top = 20, Text = "Delay (seconds):", AutoSize = true };
+            var textBox = new TextBox() { Left = 120, Top = 18, Width = 100, Text = PasteDelaySeconds.ToString() };
+            var button = new Button() { Text = "OK", Left = 120, Top = 50, Width = 100, DialogResult = DialogResult.OK };
+            form.Controls.Add(label);
+            form.Controls.Add(textBox);
+            form.Controls.Add(button);
+            form.AcceptButton = button;
+
+            if (form.ShowDialog() == DialogResult.OK)
+            {
+                if (int.TryParse(textBox.Text, out int result) && result >= 0)
+                {
+                    PasteDelaySeconds = result;
+                }
+                else
+                {
+                    MessageBox.Show("Invalid delay. Please enter a valid number of seconds.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
         private void OnHotkeyPressed()
+        {
+            TriggerPaste(100);
+        }
+
+        private void TriggerPaste(int delayMs)
         {
             string textToType = "";
             try
@@ -102,7 +153,7 @@ namespace ClipTyper
             {
                 Task.Run(() =>
                 {
-                    Thread.Sleep(100);
+                    Thread.Sleep(delayMs);
                     KeyboardSimulator.SendText(textToType);
                 });
             }
