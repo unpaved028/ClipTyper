@@ -1,6 +1,12 @@
 # .NET build output
 bin/
 obj/
+publish-*/
+
+# Local settings and logs
+settings.json
+crash.log
+
 
 # User-specific files
 *.user

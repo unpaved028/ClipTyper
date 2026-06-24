@@ -14,6 +14,7 @@ namespace ClipTyper
 
         public const int WM_HOTKEY = 0x0312;
 
+        [Flags]
         public enum Modifiers
         {
             None = 0x0000,
@@ -27,6 +28,16 @@ namespace ClipTyper
         private readonly int _id;
         private bool _isRegistered;
 
+        /// <summary>
+        /// The currently registered modifier combination.
+        /// </summary>
+        public Modifiers CurrentModifier { get; private set; }
+
+        /// <summary>
+        /// The currently registered key.
+        /// </summary>
+        public Keys CurrentKey { get; private set; }
+
         public GlobalHotkey(IntPtr hWnd, int id, Modifiers modifier, Keys key)
         {
             _hWnd = hWnd;
@@ -34,13 +45,38 @@ namespace ClipTyper
             Register(modifier, key);
         }
 
-        private void Register(Modifiers modifier, Keys key)
+        private bool Register(Modifiers modifier, Keys key)
         {
             _isRegistered = RegisterHotKey(_hWnd, _id, (uint)modifier, (uint)key);
-            if (!_isRegistered)
+            if (_isRegistered)
             {
-                // Handle registration failure if needed
+                CurrentModifier = modifier;
+                CurrentKey = key;
             }
+            return _isRegistered;
+        }
+
+        /// <summary>
+        /// Unregisters the current hotkey and registers a new one.
+        /// If registration of the new hotkey fails, the old hotkey
+        /// is restored automatically.
+        /// </summary>
+        /// <returns>True if the new hotkey was registered successfully.</returns>
+        public bool Reregister(Modifiers newModifier, Keys newKey)
+        {
+            var oldModifier = CurrentModifier;
+            var oldKey = CurrentKey;
+
+            Unregister();
+
+            if (Register(newModifier, newKey))
+            {
+                return true;
+            }
+
+            // Registration failed — restore previous hotkey
+            Register(oldModifier, oldKey);
+            return false;
         }
 
         public void Unregister()
