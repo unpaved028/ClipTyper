@@ -3,6 +3,7 @@ bin/
 obj/
 publish-*/
 ClipTyper-Setup.exe
+build-local.ps1
 
 # Local settings and logs
 settings.json
