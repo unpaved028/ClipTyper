@@ -2,6 +2,7 @@
 bin/
 obj/
 publish-*/
+ClipTyper-Setup.exe
 
 # Local settings and logs
 settings.json

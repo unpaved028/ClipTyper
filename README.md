@@ -7,7 +7,7 @@ A lightweight, portable Windows tool that types clipboard text as simulated keyb
 ## ⬇️ Download & Installation
 
 ### Windows Package Manager (WinGet)
-You can install the portable version of ClipTyper directly from your terminal:
+You can install ClipTyper directly from your terminal:
 ```cmd
 winget install unpaved028.ClipTyper
 ```
@@ -15,10 +15,11 @@ winget install unpaved028.ClipTyper
 ### Manual Download
 | Variant | Description | .NET Runtime Required? | Download |
 |---|---|---|---|
+| **Installer (Recommended)** | Standard non-admin Setup.exe – automatically creates Start Menu shortcuts and handles Autostart | ❌ No | **[ClipTyper-Setup.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Setup.exe)** |
 | **Portable** | Single `.exe` self-contained with .NET Runtime – runs instantly anywhere | ❌ No | **[ClipTyper-Portable.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Portable.exe)** |
 | **Slim** | Single `.exe` (~1 MB), requires installed .NET 8 Runtime | ✅ [Install Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime) | **[ClipTyper-Slim.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Slim.exe)** |
 
-> 💡 **Not sure which version to choose?** Grab **Portable** — it works out of the box on any Windows 10/11 (x64) without requiring any pre-installed framework.
+> 💡 **Not sure which version to choose?** Grab the **Installer** — it sets up everything automatically without requiring any Administrator privileges.
 
 ## Features
 
@@ -28,8 +29,8 @@ winget install unpaved028.ClipTyper
 - ⌨️ **Hardware-level input** — uses `SendInput` with Unicode characters, not `SendKeys`
 - 🕐 **Configurable timing** — adjustable keystroke delay (5–100ms) ensures no characters are dropped
 - 🖥️ **Silent background app** — runs as a system tray icon, no window
-- 🖱️ **Floating overlay button** — optional on-screen button for fullscreen RDP sessions where hotkeys are forwarded to the remote machine
-- ⚙️ **Customizable hotkey** — change the trigger hotkey to any combination you prefer
+- 🖱️ **Floating overlay button** — optional on-screen button with multi-monitor support, edge snapping, live-preview scaling (25% - 200%), and a customizable visibility toggle hotkey
+- ⚙️ **Customizable hotkeys** — change the trigger hotkey and the overlay visibility toggle hotkey to any combinations you prefer
 - 🔄 **Update checker** — check for new versions directly from the About dialog
 
 ## Usage
@@ -47,13 +48,13 @@ winget install unpaved028.ClipTyper
 
 When using fullscreen Remote Desktop, global hotkeys like `Ctrl+Shift+T` are forwarded to the remote session. The overlay button solves this:
 
-1. **Enable** the overlay: Right-click tray icon → **Settings** → check **"Show Overlay Button"** → Save
+1. **Enable** the overlay: Right-click tray icon → **Settings** → check **"Show Overlay Button"** → Save. (You can also toggle its visibility at any time using the `Ctrl+Shift+H` hotkey).
 2. A small, semi-transparent ClipTyper icon appears at the edge of your screen
 3. **Hover** over it — it slides out from the edge
 4. **Left-click** it — ClipTyper automatically restores focus to your previous window and types the clipboard content
-5. **Right-click** it to hide or resize
+5. **Right-click** it to hide, select the active monitor, or select a scale preset (50%/100%/200%)
 
-The overlay can be **dragged** anywhere on screen. When near a screen edge, it "peeks" out with only a small portion visible, sliding in fully on hover.
+The overlay can be **dragged** anywhere on screen. When dragged near a screen edge (Left, Right, Top, Bottom) on *any* monitor, it snaps and peeks out cleanly.
 
 ## Settings
 
@@ -64,12 +65,14 @@ Right-click the tray icon → **Settings** to configure:
 | **Trigger Hotkey** | The keyboard shortcut to trigger typing. Validates if the hotkey is in use. | `Ctrl + Shift + T` |
 | **Keystroke Delay** | Delay between each simulated keystroke (5–100ms). Increase for slow/remote targets. | 25ms |
 | **Show Overlay Button** | Enable/disable the floating overlay button. | Disabled |
-| **Size** | Small (32px), Medium (64px), or Large (128px). | Small |
+| **Scale** | Scale percentage slider (25%–200%) with real-time preview. | 100% |
+| **Monitor** | Select which display monitor to position the overlay on. | Primary Monitor |
+| **Overlay Toggle Hotkey** | Keyboard shortcut to show/hide the floating overlay button. | `Ctrl + Shift + H` |
 | **Reset Position** | Reset the overlay to the default position (right edge, center). | — |
-| **Run at Startup** | *(WinGet version only)* Run ClipTyper automatically on Windows boot. | Enabled |
+| **Run at Startup** | *(Installed version only)* Run ClipTyper automatically on Windows boot. | Enabled |
 
 **Settings Storage:**
-- **WinGet Version:** Settings are saved to `%AppData%\ClipTyper\settings.json`.
+- **Installed Version (Installer/WinGet):** Program is installed under `%LocalAppData%\Programs\ClipTyper`. Settings are saved to `%AppData%\ClipTyper\settings.json`.
 - **Portable / Slim Versions:** Settings are saved as `settings.json` in the same folder as the executable (enabled by the `portable.marker` file).
 
 ## How It Works
@@ -115,9 +118,26 @@ New-Item -Path ./publish-slim/portable.marker -ItemType File
 
 # 3. WinGet (installed mode, no marker, settings in AppData)
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o ./publish-winget
+
+# 4. Compile Installer (requires Inno Setup installed)
+iscc /DMyAppVersion=1.4.0 setup.iss
 ```
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building.
+
+## Changelog
+
+### v1.4.0
+- **New Inno Setup Installer**: Introduced a user-space non-admin installer (`ClipTyper-Setup.exe`) that automatically configures Start Menu shortcuts and Autostart registry settings during installation, and launches the app automatically.
+- **Overlay Scaling**: Replaced size presets with a continuous Scale percentage slider (25% - 200%) in the settings form, including a real-time live preview.
+- **Multi-Monitor Positioning**: Added support for choosing which display monitor the overlay button resides on, and ensured relative coordinates are preserved on monitor switch.
+- **All-Edge Peeking & Snapping**: The overlay button can now snap and peek vertically (top/bottom) and horizontally (left/right) on any display.
+- **Adjacent Monitor Bleeding Fix**: Implemented boundary region clipping to prevent the floating icon from bleeding onto adjacent screens when parked.
+- **Visibility Toggle Shortcut**: Added a global hotkey (default `Ctrl + Shift + H`, fully customizable) to easily toggle the overlay button on/off.
+
+### v1.2.0
+- Added manual "Check for Updates" feature in the About dialog linking to Github Release API.
+- Implemented settings validation to prevent binding system-reserved or blocked hotkeys.
 
 ## License
 

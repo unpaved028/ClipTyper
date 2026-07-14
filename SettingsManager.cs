@@ -16,7 +16,9 @@ namespace ClipTyper
     {
         // Overlay
         public bool OverlayEnabled { get; set; } = false;
-        public string OverlaySize { get; set; } = "Small";   // "Small" | "Medium" | "Large"
+        public string OverlaySize { get; set; } = "Small";   // "Small" | "Medium" | "Large" (Deprecated, kept for compatibility)
+        public int OverlayScalePercent { get; set; } = 100;
+        public int OverlayMonitorIndex { get; set; } = 0;
         public int OverlayX { get; set; } = -1;              // -1 = default (right edge)
         public int OverlayY { get; set; } = -1;              // -1 = default (vertically centered)
 
@@ -26,6 +28,11 @@ namespace ClipTyper
         // Hotkey  (defaults: Ctrl+Shift = 0x0006, T = 0x54)
         public int HotkeyModifiers { get; set; } = 0x0006;
         public int HotkeyKey { get; set; } = 0x54;
+
+        // Overlay Toggle Hotkey (defaults: Ctrl+Shift = 0x0006, H = 0x48)
+        public int OverlayToggleModifiers { get; set; } = 0x0006;
+        public int OverlayToggleKey { get; set; } = 0x48;
+        public bool OverlayToggleEnabled { get; set; } = true;
 
         // Autostart (only used in Winget/installed mode)
         public bool AutoStartEnabled { get; set; } = true;
@@ -111,6 +118,21 @@ namespace ClipTyper
                     {
                         // Clamp keystroke delay to valid range
                         loaded.KeystrokeDelayMs = Math.Clamp(loaded.KeystrokeDelayMs, 5, 100);
+                        
+                        // Migrate legacy OverlaySize to OverlayScalePercent if applicable
+                        if (loaded.OverlayScalePercent == 100 && !string.IsNullOrEmpty(loaded.OverlaySize))
+                        {
+                            loaded.OverlayScalePercent = loaded.OverlaySize switch
+                            {
+                                "Small" => 50,
+                                "Large" => 200,
+                                _ => 100
+                            };
+                        }
+                        
+                        // Clamp scale percent to valid range (25% to 200%)
+                        loaded.OverlayScalePercent = Math.Clamp(loaded.OverlayScalePercent, 25, 200);
+
                         Current = loaded;
                         return Current;
                     }

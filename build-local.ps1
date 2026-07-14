@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 # Version to build
-$version = "1.3.0"
+$version = "1.4.0"
 
 # Kill any existing processes just in case
 Stop-Process -Name "ClipTyper" -ErrorAction SilentlyContinue
@@ -75,3 +75,28 @@ Publish-Variant -Name "Slim" -OutputDir "./publish-slim" -TargetExeName "ClipTyp
 
 # 3. Winget
 Publish-Variant -Name "Winget" -OutputDir "./publish-winget" -TargetExeName "ClipTyper.exe" -SelfContained $true -AddMarker $false
+
+# 4. Inno Setup Installer
+Write-Host "--- Packaging Inno Setup Installer ---" -ForegroundColor Cyan
+$isccPath = Get-Command "iscc" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+if (-not $isccPath) {
+    # Check standard installations paths
+    $stdPaths = @(
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        "C:\Program Files\Inno Setup 6\ISCC.exe"
+    )
+    foreach ($p in $stdPaths) {
+        if (Test-Path $p) {
+            $isccPath = $p
+            break
+        }
+    }
+}
+
+if ($isccPath) {
+    Write-Host "Found Inno Setup compiler: $isccPath" -ForegroundColor Green
+    & $isccPath /DMyAppVersion=$version setup.iss
+    Write-Host "Successfully compiled ClipTyper-Setup.exe" -ForegroundColor Green
+} else {
+    Write-Host "Inno Setup compiler (ISCC) not found on PATH or standard directories. Skipping installer compilation." -ForegroundColor Yellow
+}

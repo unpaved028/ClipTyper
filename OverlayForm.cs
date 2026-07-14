@@ -16,10 +16,9 @@ namespace ClipTyper
     /// </summary>
     public class OverlayForm : Form
     {
-        // ── Size presets — match native icon sizes for crisp rendering ──
-        private const int SizeSmall  = 64;
-        private const int SizeMedium = 128;
-        private const int SizeLarge  = 256;
+        // ── Size & Scale Constants ──────────────────────────────────
+        private const int BaseSize         = 128;  // Base size in pixels (100% scale)
+        private const int SizeLarge        = 256;  // Size threshold for loading high-res icon
 
         // ── Peek / animation constants ──────────────────────────────
         private const int EdgeThreshold    = 10;   // px — considered "at edge"
@@ -41,13 +40,26 @@ namespace ClipTyper
         private bool _hasDragged;
         private Point _dragStartScreenPos;
 
-        // Peek animation
+        // Peek animation & clipping
         private System.Windows.Forms.Timer _peekTimer = null!;
-        private int _peekTarget;       // target X for slide animation
+        private int _peekTarget;       // target coordinate for slide animation
         private int _peekStep;         // pixels per timer tick
         private bool _isPeeking;       // true when parked at edge in peek mode
+        
+        private enum PeekEdge
+        {
+            None,
+            Left,
+            Right,
+            Top,
+            Bottom
+        }
+        private PeekEdge _currentPeekEdge = PeekEdge.None;
+        
         private int _peekHiddenX;      // X position when hidden behind edge
         private int _peekVisibleX;     // X position when fully visible
+        private int _peekHiddenY;      // Y position when hidden behind edge
+        private int _peekVisibleY;     // Y position when fully visible
 
         // Focus tracking — polls the foreground window so we know where to
         // return focus when the overlay is clicked.
@@ -66,9 +78,9 @@ namespace ClipTyper
         public event Action? OverlayHidden;
 
         /// <summary>
-        /// Raised when the user changes the overlay size from the context menu.
+        /// Raised when the user changes the overlay scale from the context menu.
         /// </summary>
-        public new event Action<string>? SizeChanged;
+        public event Action<int>? ScaleChanged;
 
         // ── Constructor ─────────────────────────────────────────────
 
@@ -81,7 +93,7 @@ namespace ClipTyper
             _triggerClipType = triggerClipType;
             InitializeForm();
             InitializeIcon();
-            ApplySize(SettingsManager.Current.OverlaySize);
+            ApplyScale(SettingsManager.Current.OverlayScalePercent);
             InitializeContextMenu();
             InitializeFocusTracker();
             InitializePeekTimer();
@@ -103,7 +115,7 @@ namespace ClipTyper
             TransparencyKey = Color.FromArgb(1, 1, 1);
 
             // Size is applied after InitializeIcon() in the constructor
-            Size = new Size(SizeMedium, SizeMedium);
+            Size = new Size(BaseSize, BaseSize);
         }
 
         private void InitializeIcon()
@@ -137,8 +149,10 @@ namespace ClipTyper
         private void UpdateIconImage()
         {
             if (_iconBox == null) return;
+            var oldImage = _iconBox.Image;
             var icon = Width >= SizeLarge ? _overlayIcon256 : _overlayIcon128;
             _iconBox.Image = icon?.ToBitmap();
+            oldImage?.Dispose();
         }
 
         protected override void OnLoad(EventArgs e)
@@ -155,38 +169,58 @@ namespace ClipTyper
                 OverlayHidden?.Invoke();
             });
 
-            var sizeMenu = new ToolStripMenuItem("Size");
-            sizeMenu.DropDownItems.Add(CreateSizeMenuItem("Small"));
-            sizeMenu.DropDownItems.Add(CreateSizeMenuItem("Medium"));
-            sizeMenu.DropDownItems.Add(CreateSizeMenuItem("Large"));
-            _overlayMenu.Items.Add(sizeMenu);
+            var monitorMenu = new ToolStripMenuItem("Monitor");
+            monitorMenu.DropDownOpening += (s, e) => PopulateMonitorMenu(monitorMenu);
+            _overlayMenu.Items.Add(monitorMenu);
 
-            UpdateSizeCheckmarks();
+            var scaleMenu = new ToolStripMenuItem("Scale");
+            scaleMenu.DropDownOpening += (s, e) => PopulateScaleMenu(scaleMenu);
+            _overlayMenu.Items.Add(scaleMenu);
         }
 
-        private ToolStripMenuItem CreateSizeMenuItem(string size)
+        private void PopulateMonitorMenu(ToolStripMenuItem monitorMenu)
         {
-            var item = new ToolStripMenuItem(size, null, (_, _) =>
+            monitorMenu.DropDownItems.Clear();
+            var screens = Screen.AllScreens;
+            var currentScreen = Screen.FromPoint(new Point(Left + Width / 2, Top + Height / 2));
+            int currentScreenIndex = Array.IndexOf(screens, currentScreen);
+
+            for (int i = 0; i < screens.Length; i++)
             {
-                ApplySize(size);
-                SettingsManager.Current.OverlaySize = size;
-                SettingsManager.Save();
-                UpdateSizeCheckmarks();
-                SizeChanged?.Invoke(size);
-            });
-            item.Tag = size;
-            return item;
+                var screen = screens[i];
+                string name = $"Monitor {i + 1}" + (screen.Primary ? " (Primary)" : "");
+                int index = i;
+                var item = new ToolStripMenuItem(name, null, (_, _) =>
+                {
+                    MoveToMonitor(index);
+                });
+                item.Checked = (index == currentScreenIndex);
+                monitorMenu.DropDownItems.Add(item);
+            }
         }
 
-        private void UpdateSizeCheckmarks()
+        private void PopulateScaleMenu(ToolStripMenuItem scaleMenu)
         {
-            if (_overlayMenu.Items.Count < 2) return;
-            var sizeMenu = _overlayMenu.Items[1] as ToolStripMenuItem;
-            if (sizeMenu == null) return;
+            scaleMenu.DropDownItems.Clear();
+            int currentScale = SettingsManager.Current.OverlayScalePercent;
 
-            foreach (ToolStripMenuItem item in sizeMenu.DropDownItems)
+            int[] presets = { 50, 75, 100, 150, 200 };
+            foreach (int preset in presets)
             {
-                item.Checked = item.Tag?.ToString() == SettingsManager.Current.OverlaySize;
+                string label = $"{preset}%";
+                if (preset == 50) label += " (Small)";
+                else if (preset == 100) label += " (Medium)";
+                else if (preset == 200) label += " (Large)";
+
+                var item = new ToolStripMenuItem(label, null, (_, _) =>
+                {
+                    SettingsManager.Current.OverlayScalePercent = preset;
+                    ApplyScale(preset);
+                    SettingsManager.Save();
+                    ScaleChanged?.Invoke(preset);
+                });
+                item.Checked = (currentScale == preset);
+                scaleMenu.DropDownItems.Add(item);
             }
         }
 
@@ -219,7 +253,7 @@ namespace ClipTyper
 
         /// <summary>
         /// Sets the overlay position. If coordinates are -1 (default),
-        /// positions at the right edge of the primary screen, vertically centered.
+        /// positions at the right edge of the configured screen, vertically centered.
         /// Validates that the position is within screen bounds.
         /// </summary>
         public void SetInitialPosition()
@@ -259,11 +293,18 @@ namespace ClipTyper
 
         /// <summary>
         /// Moves the overlay to the default position: right edge of the
-        /// primary monitor, vertically centered, in peek mode.
+        /// configured monitor, vertically centered, in peek mode.
         /// </summary>
         public void MoveToDefaultPosition()
         {
-            var workArea = Screen.PrimaryScreen!.WorkingArea;
+            var screens = Screen.AllScreens;
+            int index = SettingsManager.Current.OverlayMonitorIndex;
+            if (index < 0 || index >= screens.Length)
+            {
+                index = 0;
+            }
+            var targetScreen = screens[index];
+            var workArea = targetScreen.WorkingArea;
             int x = workArea.Right - (int)(Width * 0.3); // 30% visible
             int y = workArea.Top + (workArea.Height - Height) / 2;
             Location = new Point(x, y);
@@ -272,25 +313,45 @@ namespace ClipTyper
         }
 
         /// <summary>
-        /// Applies a size preset ("Small", "Medium", "Large").
+        /// Repositions the overlay to the selected monitor index,
+        /// preserving its relative vertical and horizontal position.
+        /// </summary>
+        public void MoveToMonitor(int index)
+        {
+            var screens = Screen.AllScreens;
+            if (index < 0 || index >= screens.Length)
+            {
+                index = 0;
+            }
+            var targetScreen = screens[index];
+            var currentScreen = Screen.FromPoint(new Point(Left + Width / 2, Top + Height / 2));
+
+            double relX = (double)(Left + Width / 2 - currentScreen.WorkingArea.Left) / currentScreen.WorkingArea.Width;
+            double relY = (double)(Top + Height / 2 - currentScreen.WorkingArea.Top) / currentScreen.WorkingArea.Height;
+
+            int newCenterX = targetScreen.WorkingArea.Left + (int)(relX * targetScreen.WorkingArea.Width);
+            int newCenterY = targetScreen.WorkingArea.Top + (int)(relY * targetScreen.WorkingArea.Height);
+
+            Location = new Point(newCenterX - Width / 2, newCenterY - Height / 2);
+            SettingsManager.Current.OverlayMonitorIndex = index;
+            SavePosition();
+            CheckPeekMode();
+        }
+
+        /// <summary>
+        /// Applies a scale percentage.
         /// Preserves the overlay's anchor position so it stays visually
         /// in the same spot after resizing.
         /// </summary>
-        public void ApplySize(string preset)
+        public void ApplyScale(int scalePercent)
         {
-            int formSize = preset switch
-            {
-                "Small"  => SizeSmall,
-                "Large"  => SizeLarge,
-                _        => SizeMedium
-            };
+            int formSize = (BaseSize * scalePercent) / 100;
+            formSize = Math.Clamp(formSize, 32, 512);
 
             // Preserve anchor point before resizing
             int oldWidth = Width;
             int oldHeight = Height;
             bool hadSize = oldWidth > 0 && oldHeight > 0;
-            int anchorRight = Right;
-            int anchorLeft = Left;
             int centerX = Left + oldWidth / 2;
             int centerY = Top + oldHeight / 2;
 
@@ -415,7 +476,14 @@ namespace ClipTyper
             if (_isPeeking)
             {
                 // Slide in from edge
-                SlideToPosition(_peekVisibleX);
+                if (_currentPeekEdge == PeekEdge.Left || _currentPeekEdge == PeekEdge.Right)
+                {
+                    SlideToPosition(_peekVisibleX);
+                }
+                else if (_currentPeekEdge == PeekEdge.Top || _currentPeekEdge == PeekEdge.Bottom)
+                {
+                    SlideToPosition(_peekVisibleY);
+                }
             }
         }
 
@@ -429,14 +497,22 @@ namespace ClipTyper
             if (_isPeeking)
             {
                 // Slide back behind edge
-                SlideToPosition(_peekHiddenX);
+                if (_currentPeekEdge == PeekEdge.Left || _currentPeekEdge == PeekEdge.Right)
+                {
+                    SlideToPosition(_peekHiddenX);
+                }
+                else if (_currentPeekEdge == PeekEdge.Top || _currentPeekEdge == PeekEdge.Bottom)
+                {
+                    SlideToPosition(_peekHiddenY);
+                }
             }
         }
 
-        private void SlideToPosition(int targetX)
+        private void SlideToPosition(int target)
         {
-            _peekTarget = targetX;
-            int distance = Math.Abs(targetX - Left);
+            _peekTarget = target;
+            int current = (_currentPeekEdge == PeekEdge.Left || _currentPeekEdge == PeekEdge.Right) ? Left : Top;
+            int distance = Math.Abs(target - current);
             int steps = Math.Max(1, AnimationTotalMs / AnimationStepMs);
             _peekStep = Math.Max(1, distance / steps);
 
@@ -445,14 +521,26 @@ namespace ClipTyper
 
         private void OnPeekTimerTick(object? sender, EventArgs e)
         {
-            if (Math.Abs(Left - _peekTarget) <= _peekStep)
+            if (_currentPeekEdge == PeekEdge.Left || _currentPeekEdge == PeekEdge.Right)
             {
-                Left = _peekTarget;
-                _peekTimer.Stop();
-                return;
+                if (Math.Abs(Left - _peekTarget) <= _peekStep)
+                {
+                    Left = _peekTarget;
+                    _peekTimer.Stop();
+                    return;
+                }
+                Left += Left < _peekTarget ? _peekStep : -_peekStep;
             }
-
-            Left += Left < _peekTarget ? _peekStep : -_peekStep;
+            else if (_currentPeekEdge == PeekEdge.Top || _currentPeekEdge == PeekEdge.Bottom)
+            {
+                if (Math.Abs(Top - _peekTarget) <= _peekStep)
+                {
+                    Top = _peekTarget;
+                    _peekTimer.Stop();
+                    return;
+                }
+                Top += Top < _peekTarget ? _peekStep : -_peekStep;
+            }
         }
 
         /// <summary>
@@ -463,42 +551,54 @@ namespace ClipTyper
         private void CheckPeekMode()
         {
             _isPeeking = false;
+            _currentPeekEdge = PeekEdge.None;
 
-            foreach (var screen in Screen.AllScreens)
+            var screen = Screen.FromPoint(new Point(Left + Width / 2, Top + Height / 2));
+            var area = screen.WorkingArea;
+
+            // Right edge
+            if (Math.Abs(Right - area.Right) < EdgeThreshold || Left + Width > area.Right)
             {
-                var area = screen.WorkingArea;
-
-                // Right edge
-                if (Math.Abs(Right - area.Right) < EdgeThreshold ||
-                    Left + Width > area.Right)
-                {
-                    _peekVisibleX = area.Right - Width;
-                    _peekHiddenX = area.Right - (int)(Width * 0.3);
-                    _isPeeking = true;
-                    Left = _peekHiddenX;
-                    return;
-                }
-
-                // Left edge
-                if (Math.Abs(Left - area.Left) < EdgeThreshold ||
-                    Left < area.Left)
-                {
-                    _peekVisibleX = area.Left;
-                    _peekHiddenX = area.Left - (int)(Width * 0.7);
-                    _isPeeking = true;
-                    Left = _peekHiddenX;
-                    return;
-                }
-
-                // Top edge
-                if (Math.Abs(Top - area.Top) < EdgeThreshold)
-                {
-                    // For top/bottom we keep X but peek vertically
-                    // (simplified: no vertical peek — just stay visible)
-                }
+                _currentPeekEdge = PeekEdge.Right;
+                _peekVisibleX = area.Right - Width;
+                _peekHiddenX = area.Right - (int)(Width * 0.3);
+                _isPeeking = true;
+                Left = _peekHiddenX;
+                return;
             }
 
-            // Not at an edge — fully visible
+            // Left edge
+            if (Math.Abs(Left - area.Left) < EdgeThreshold || Left < area.Left)
+            {
+                _currentPeekEdge = PeekEdge.Left;
+                _peekVisibleX = area.Left;
+                _peekHiddenX = area.Left - (int)(Width * 0.7);
+                _isPeeking = true;
+                Left = _peekHiddenX;
+                return;
+            }
+
+            // Top edge
+            if (Math.Abs(Top - area.Top) < EdgeThreshold || Top < area.Top)
+            {
+                _currentPeekEdge = PeekEdge.Top;
+                _peekVisibleY = area.Top;
+                _peekHiddenY = area.Top - (int)(Height * 0.7);
+                _isPeeking = true;
+                Top = _peekHiddenY;
+                return;
+            }
+
+            // Bottom edge
+            if (Math.Abs(Bottom - area.Bottom) < EdgeThreshold || Top + Height > area.Bottom)
+            {
+                _currentPeekEdge = PeekEdge.Bottom;
+                _peekVisibleY = area.Bottom - Height;
+                _peekHiddenY = area.Bottom - (int)(Height * 0.3);
+                _isPeeking = true;
+                Top = _peekHiddenY;
+                return;
+            }
         }
 
         /// <summary>
@@ -507,37 +607,35 @@ namespace ClipTyper
         /// </summary>
         private void SnapToEdgeIfClose()
         {
-            foreach (var screen in Screen.AllScreens)
+            var screen = Screen.FromPoint(new Point(Left + Width / 2, Top + Height / 2));
+            var area = screen.WorkingArea;
+
+            // Right edge snap
+            if (Math.Abs(Right - area.Right) < SnapThreshold)
             {
-                var area = screen.WorkingArea;
+                Left = area.Right - (int)(Width * 0.3);
+                return;
+            }
 
-                // Right edge snap
-                if (Math.Abs(Right - area.Right) < SnapThreshold)
-                {
-                    Left = area.Right - (int)(Width * 0.3);
-                    return;
-                }
+            // Left edge snap
+            if (Math.Abs(Left - area.Left) < SnapThreshold)
+            {
+                Left = area.Left - (int)(Width * 0.7);
+                return;
+            }
 
-                // Left edge snap
-                if (Math.Abs(Left - area.Left) < SnapThreshold)
-                {
-                    Left = area.Left - (int)(Width * 0.7);
-                    return;
-                }
+            // Top edge snap
+            if (Math.Abs(Top - area.Top) < SnapThreshold)
+            {
+                Top = area.Top - (int)(Height * 0.7);
+                return;
+            }
 
-                // Top edge snap
-                if (Math.Abs(Top - area.Top) < SnapThreshold)
-                {
-                    Top = area.Top;
-                    return;
-                }
-
-                // Bottom edge snap
-                if (Math.Abs(Bottom - area.Bottom) < SnapThreshold)
-                {
-                    Top = area.Bottom - Height;
-                    return;
-                }
+            // Bottom edge snap
+            if (Math.Abs(Bottom - area.Bottom) < SnapThreshold)
+            {
+                Top = area.Bottom - (int)(Height * 0.3);
+                return;
             }
         }
 
@@ -547,7 +645,60 @@ namespace ClipTyper
         {
             SettingsManager.Current.OverlayX = Left;
             SettingsManager.Current.OverlayY = Top;
+
+            // Sync current monitor index based on center position
+            var currentScreen = Screen.FromPoint(new Point(Left + Width / 2, Top + Height / 2));
+            int index = Array.IndexOf(Screen.AllScreens, currentScreen);
+            if (index >= 0)
+            {
+                SettingsManager.Current.OverlayMonitorIndex = index;
+            }
             SettingsManager.Save();
+        }
+
+        /// <summary>
+        /// Updates the form's clipping region to prevent bleeding onto adjacent monitors.
+        /// </summary>
+        private void UpdateClippingRegion()
+        {
+            if (!_isPeeking)
+            {
+                Region = null;
+                return;
+            }
+
+            var screen = Screen.FromPoint(new Point(Left + Width / 2, Top + Height / 2));
+            var area = screen.WorkingArea;
+
+            Rectangle formBounds = Bounds;
+            Rectangle intersection = Rectangle.Intersect(formBounds, area);
+
+            if (intersection.Width <= 0 || intersection.Height <= 0)
+            {
+                Region = new Region(Rectangle.Empty);
+            }
+            else if (intersection == formBounds)
+            {
+                Region = null;
+            }
+            else
+            {
+                int localX = intersection.Left - Left;
+                int localY = intersection.Top - Top;
+                Region = new Region(new Rectangle(localX, localY, intersection.Width, intersection.Height));
+            }
+        }
+
+        protected override void OnLocationChanged(EventArgs e)
+        {
+            base.OnLocationChanged(e);
+            UpdateClippingRegion();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            UpdateClippingRegion();
         }
 
         /// <summary>

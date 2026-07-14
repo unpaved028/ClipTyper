@@ -22,12 +22,13 @@ namespace ClipTyper
 
         // ── Controls ────────────────────────────────────────────────
         private TextBox _hotkeyBox = null!;
+        private TextBox _toggleHotkeyBox = null!;
         private TrackBar _delaySlider = null!;
         private Label _delayLabel = null!;
         private CheckBox _overlayCheckbox = null!;
-        private RadioButton _sizeSmall = null!;
-        private RadioButton _sizeMedium = null!;
-        private RadioButton _sizeLarge = null!;
+        private TrackBar _scaleSlider = null!;
+        private Label _scaleLabel = null!;
+        private ComboBox _monitorComboBox = null!;
         private Button _resetPositionBtn = null!;
         private CheckBox? _autostartCheckbox;
         private Button _saveBtn = null!;
@@ -36,7 +37,16 @@ namespace ClipTyper
         // ── Hotkey recorder state ───────────────────────────────────
         private Keys _recordedKey = Keys.None;
         private GlobalHotkey.Modifiers _recordedModifiers = GlobalHotkey.Modifiers.None;
-        private bool _isRecording;
+        private Keys _recordedToggleKey = Keys.None;
+        private GlobalHotkey.Modifiers _recordedToggleModifiers = GlobalHotkey.Modifiers.None;
+        
+        private enum RecordingTarget
+        {
+            None,
+            TriggerHotkey,
+            ToggleHotkey
+        }
+        private RecordingTarget _recordingTarget = RecordingTarget.None;
 
         // ── Blocked hotkey combinations ─────────────────────────────
         private static readonly (GlobalHotkey.Modifiers mod, Keys key)[] BlockedCombos =
@@ -52,9 +62,14 @@ namespace ClipTyper
 
         /// <summary>
         /// Raised when the user saves settings. Parameters:
-        /// (Modifiers, Key, DelayMs, OverlayEnabled, OverlaySize, ResetPosition, AutoStartEnabled)
+        /// (Modifiers, Key, DelayMs, OverlayEnabled, OverlayScale, OverlayMonitor, ResetPosition, AutoStartEnabled, ToggleModifiers, ToggleKey, ToggleEnabled)
         /// </summary>
-        public event Action<GlobalHotkey.Modifiers, Keys, int, bool, string, bool, bool>? SettingsSaved;
+        public event Action<GlobalHotkey.Modifiers, Keys, int, bool, int, int, bool, bool, GlobalHotkey.Modifiers, Keys, bool>? SettingsSaved;
+
+        /// <summary>
+        /// Raised in real-time when the user moves the scale slider.
+        /// </summary>
+        public event Action<int>? LiveScaleChanged;
 
         public SettingsForm()
         {
@@ -76,12 +91,12 @@ namespace ClipTyper
 
             int y = 12;
 
-            // ── Hotkey Group ────────────────────────────────────────
+            // ── Hotkeys Group ───────────────────────────────────────
             var hotkeyGroup = new GroupBox
             {
-                Text = "Hotkey",
+                Text = "Hotkeys",
                 Location = new Point(12, y),
-                Size = new Size(380, 80)
+                Size = new Size(380, 110)
             };
 
             var hotkeyLabel = new Label
@@ -93,28 +108,47 @@ namespace ClipTyper
 
             _hotkeyBox = new TextBox
             {
-                Location = new Point(120, 25),
+                Location = new Point(150, 25),
                 Size = new Size(200, 23),
                 ReadOnly = true,
                 TextAlign = HorizontalAlignment.Center,
                 Cursor = Cursors.Hand,
                 BackColor = SystemColors.Window
             };
-            _hotkeyBox.Enter += (_, _) => { _isRecording = true; _hotkeyBox.BackColor = Color.LightYellow; };
-            _hotkeyBox.Leave += (_, _) => { _isRecording = false; _hotkeyBox.BackColor = SystemColors.Window; };
+            _hotkeyBox.Enter += (_, _) => { _recordingTarget = RecordingTarget.TriggerHotkey; _hotkeyBox.BackColor = Color.LightYellow; };
+            _hotkeyBox.Leave += (_, _) => { _recordingTarget = RecordingTarget.None; _hotkeyBox.BackColor = SystemColors.Window; };
+
+            var toggleHotkeyLabel = new Label
+            {
+                Text = "Toggle Overlay:",
+                Location = new Point(12, 58),
+                AutoSize = true
+            };
+
+            _toggleHotkeyBox = new TextBox
+            {
+                Location = new Point(150, 55),
+                Size = new Size(200, 23),
+                ReadOnly = true,
+                TextAlign = HorizontalAlignment.Center,
+                Cursor = Cursors.Hand,
+                BackColor = SystemColors.Window
+            };
+            _toggleHotkeyBox.Enter += (_, _) => { _recordingTarget = RecordingTarget.ToggleHotkey; _toggleHotkeyBox.BackColor = Color.LightYellow; };
+            _toggleHotkeyBox.Leave += (_, _) => { _recordingTarget = RecordingTarget.None; _toggleHotkeyBox.BackColor = SystemColors.Window; };
 
             var hotkeyHint = new Label
             {
                 Text = "Click and press new hotkey combination",
-                Location = new Point(120, 52),
+                Location = new Point(150, 82),
                 AutoSize = true,
                 ForeColor = SystemColors.GrayText,
                 Font = new Font(Font.FontFamily, 7.5f)
             };
 
-            hotkeyGroup.Controls.AddRange(new Control[] { hotkeyLabel, _hotkeyBox, hotkeyHint });
+            hotkeyGroup.Controls.AddRange(new Control[] { hotkeyLabel, _hotkeyBox, toggleHotkeyLabel, _toggleHotkeyBox, hotkeyHint });
             Controls.Add(hotkeyGroup);
-            y += 90;
+            y += 120;
 
             // ── Typing Group ────────────────────────────────────────
             var typingGroup = new GroupBox
@@ -162,7 +196,7 @@ namespace ClipTyper
             {
                 Text = "Overlay",
                 Location = new Point(12, y),
-                Size = new Size(380, 110)
+                Size = new Size(380, 160)
             };
 
             _overlayCheckbox = new CheckBox
@@ -172,49 +206,71 @@ namespace ClipTyper
                 AutoSize = true
             };
 
-            var sizeLabel = new Label
+            var scaleLabelCaption = new Label
             {
-                Text = "Size:",
-                Location = new Point(12, 55),
+                Text = "Scale:",
+                Location = new Point(12, 58),
                 AutoSize = true
             };
 
-            _sizeSmall = new RadioButton
+            _scaleSlider = new TrackBar
             {
-                Text = "Small",
-                Location = new Point(60, 53),
+                Location = new Point(80, 52),
+                Size = new Size(220, 45),
+                Minimum = 25,
+                Maximum = 200,
+                TickFrequency = 25,
+                SmallChange = 5,
+                LargeChange = 25
+            };
+            _scaleSlider.ValueChanged += (_, _) =>
+            {
+                _scaleLabel.Text = $"{_scaleSlider.Value}%";
+                LiveScaleChanged?.Invoke(_scaleSlider.Value);
+            };
+
+            _scaleLabel = new Label
+            {
+                Text = "100%",
+                Location = new Point(310, 58),
                 AutoSize = true
             };
 
-            _sizeMedium = new RadioButton
+            var monitorLabelCaption = new Label
             {
-                Text = "Medium",
-                Location = new Point(130, 53),
+                Text = "Monitor:",
+                Location = new Point(12, 98),
                 AutoSize = true
             };
 
-            _sizeLarge = new RadioButton
+            _monitorComboBox = new ComboBox
             {
-                Text = "Large",
-                Location = new Point(210, 53),
-                AutoSize = true
+                Location = new Point(80, 95),
+                Size = new Size(220, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList
             };
+            // Populate monitor options
+            for (int i = 0; i < Screen.AllScreens.Length; i++)
+            {
+                var screen = Screen.AllScreens[i];
+                string name = $"Monitor {i + 1}" + (screen.Primary ? " (Primary)" : "");
+                _monitorComboBox.Items.Add(name);
+            }
 
             _resetPositionBtn = new Button
             {
                 Text = "Reset Position",
-                Location = new Point(12, 80),
+                Location = new Point(12, 128),
                 Size = new Size(100, 23)
             };
 
             overlayGroup.Controls.AddRange(new Control[]
             {
-                _overlayCheckbox, sizeLabel,
-                _sizeSmall, _sizeMedium, _sizeLarge,
-                _resetPositionBtn
+                _overlayCheckbox, scaleLabelCaption, _scaleSlider, _scaleLabel,
+                monitorLabelCaption, _monitorComboBox, _resetPositionBtn
             });
             Controls.Add(overlayGroup);
-            y += 120;
+            y += 170;
 
             // ── Autostart Group (Winget/installed mode only) ────────
             if (!SettingsManager.IsPortable)
@@ -270,20 +326,34 @@ namespace ClipTyper
         {
             var s = SettingsManager.Current;
 
+            // Trigger hotkey
             _recordedModifiers = (GlobalHotkey.Modifiers)s.HotkeyModifiers;
             _recordedKey = (Keys)s.HotkeyKey;
             _hotkeyBox.Text = FormatHotkey(_recordedModifiers, _recordedKey);
 
+            // Toggle hotkey
+            _recordedToggleModifiers = (GlobalHotkey.Modifiers)s.OverlayToggleModifiers;
+            _recordedToggleKey = (Keys)s.OverlayToggleKey;
+            _toggleHotkeyBox.Text = FormatHotkey(_recordedToggleModifiers, _recordedToggleKey);
+
+            // Keystroke delay
             _delaySlider.Value = Math.Clamp(s.KeystrokeDelayMs, 5, 100);
             _delayLabel.Text = $"{_delaySlider.Value} ms";
 
+            // Overlay Checkbox & Scale
             _overlayCheckbox.Checked = s.OverlayEnabled;
+            _scaleSlider.Value = Math.Clamp(s.OverlayScalePercent, 25, 200);
+            _scaleLabel.Text = $"{_scaleSlider.Value}%";
 
-            switch (s.OverlaySize)
+            // Monitor selection
+            int monitorIndex = s.OverlayMonitorIndex;
+            if (monitorIndex >= 0 && monitorIndex < _monitorComboBox.Items.Count)
             {
-                case "Small":  _sizeSmall.Checked = true; break;
-                case "Large":  _sizeLarge.Checked = true; break;
-                default:       _sizeMedium.Checked = true; break;
+                _monitorComboBox.SelectedIndex = monitorIndex;
+            }
+            else if (_monitorComboBox.Items.Count > 0)
+            {
+                _monitorComboBox.SelectedIndex = 0;
             }
 
             if (_autostartCheckbox != null)
@@ -304,7 +374,7 @@ namespace ClipTyper
         /// </summary>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            if (!_isRecording)
+            if (_recordingTarget == RecordingTarget.None)
             {
                 return base.ProcessCmdKey(ref msg, keyData);
             }
@@ -326,10 +396,12 @@ namespace ClipTyper
             if ((keyData & Keys.Shift) != 0)   mods |= GlobalHotkey.Modifiers.Shift;
             if ((keyData & Keys.Alt) != 0)     mods |= GlobalHotkey.Modifiers.Alt;
 
+            TextBox targetBox = _recordingTarget == RecordingTarget.TriggerHotkey ? _hotkeyBox : _toggleHotkeyBox;
+
             // Must have at least one modifier
             if (mods == GlobalHotkey.Modifiers.None)
             {
-                _hotkeyBox.Text = "Need modifier (Ctrl/Shift/Alt)";
+                targetBox.Text = "Need modifier (Ctrl/Shift/Alt)";
                 return true;
             }
 
@@ -338,31 +410,40 @@ namespace ClipTyper
             {
                 if (mods == blocked.mod && baseKey == blocked.key)
                 {
-                    _hotkeyBox.Text = $"{FormatHotkey(mods, baseKey)} (blocked!)";
-                    _hotkeyBox.BackColor = Color.FromArgb(255, 200, 200); // Light red
+                    targetBox.Text = $"{FormatHotkey(mods, baseKey)} (blocked!)";
+                    targetBox.BackColor = Color.FromArgb(255, 200, 200); // Light red
                     return true;
                 }
             }
 
-            // Valid combo — probe whether it's already in use by another app
-            bool isFree = ProbeHotkey(mods, baseKey);
+            // Valid combo — probe whether it's already in use
+            bool isFree = ProbeHotkey(mods, baseKey, _recordingTarget);
 
-            _recordedModifiers = mods;
-            _recordedKey = baseKey;
-            _hotkeyBox.Text = FormatHotkey(mods, baseKey);
-
-            if (isFree)
+            if (_recordingTarget == RecordingTarget.TriggerHotkey)
             {
-                _hotkeyBox.BackColor = Color.LightGreen;
+                _recordedModifiers = mods;
+                _recordedKey = baseKey;
             }
             else
             {
-                _hotkeyBox.Text += " (in use!)";
-                _hotkeyBox.BackColor = Color.FromArgb(255, 220, 150); // Orange
+                _recordedToggleModifiers = mods;
+                _recordedToggleKey = baseKey;
+            }
+
+            targetBox.Text = FormatHotkey(mods, baseKey);
+
+            if (isFree)
+            {
+                targetBox.BackColor = Color.LightGreen;
+            }
+            else
+            {
+                targetBox.Text += " (in use!)";
+                targetBox.BackColor = Color.FromArgb(255, 220, 150); // Orange
             }
 
             // Move focus away from the recorder
-            _isRecording = false;
+            _recordingTarget = RecordingTarget.None;
             _delaySlider.Focus();
             return true;
         }
@@ -370,15 +451,40 @@ namespace ClipTyper
         /// <summary>
         /// Probes whether a hotkey combination is available by temporarily
         /// registering and unregistering it. Returns true if the combo is free.
+        /// Checks for conflict with the other configured hotkey first.
         /// </summary>
-        private bool ProbeHotkey(GlobalHotkey.Modifiers mods, Keys key)
+        private bool ProbeHotkey(GlobalHotkey.Modifiers mods, Keys key, RecordingTarget target)
         {
-            // If the combo is the same as the currently active hotkey, it's "ours"
-            var currentSettings = SettingsManager.Current;
-            if ((int)mods == currentSettings.HotkeyModifiers &&
-                (int)key == currentSettings.HotkeyKey)
+            // Check conflict with the other hotkey currently being configured
+            if (target == RecordingTarget.TriggerHotkey)
             {
-                return true; // It's our own hotkey — no conflict
+                if (mods == _recordedToggleModifiers && key == _recordedToggleKey)
+                {
+                    return false; // Conflict with toggle hotkey
+                }
+
+                // If identical to active trigger hotkey in settings, it is ours
+                var currentSettings = SettingsManager.Current;
+                if ((int)mods == currentSettings.HotkeyModifiers &&
+                    (int)key == currentSettings.HotkeyKey)
+                {
+                    return true;
+                }
+            }
+            else if (target == RecordingTarget.ToggleHotkey)
+            {
+                if (mods == _recordedModifiers && key == _recordedKey)
+                {
+                    return false; // Conflict with trigger hotkey
+                }
+
+                // If identical to active toggle hotkey in settings, it is ours
+                var currentSettings = SettingsManager.Current;
+                if ((int)mods == currentSettings.OverlayToggleModifiers &&
+                    (int)key == currentSettings.OverlayToggleKey)
+                {
+                    return true;
+                }
             }
 
             bool registered = RegisterHotKey(Handle, ProbeHotkeyId, (uint)mods, (uint)key);
@@ -403,9 +509,8 @@ namespace ClipTyper
                 _resetPosition = true;
             }
 
-            string size = _sizeSmall.Checked ? "Small" :
-                          _sizeLarge.Checked ? "Large" : "Medium";
-
+            int scale = _scaleSlider.Value;
+            int monitorIndex = _monitorComboBox.SelectedIndex >= 0 ? _monitorComboBox.SelectedIndex : 0;
             bool autoStart = _autostartCheckbox?.Checked ?? SettingsManager.Current.AutoStartEnabled;
 
             SettingsSaved?.Invoke(
@@ -413,9 +518,14 @@ namespace ClipTyper
                 _recordedKey,
                 _delaySlider.Value,
                 _overlayCheckbox.Checked,
-                size,
+                scale,
+                monitorIndex,
                 _resetPosition,
-                autoStart);
+                autoStart,
+                _recordedToggleModifiers,
+                _recordedToggleKey,
+                true
+            );
         }
 
         protected override void OnLoad(EventArgs e)

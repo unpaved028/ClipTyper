@@ -13,13 +13,16 @@ namespace ClipTyper
     {
         private NotifyIcon _trayIcon;
         private GlobalHotkey _hotkey;
+        private GlobalHotkey? _overlayToggleHotkey;
         private OverlayForm? _overlay;
         private const int HotkeyId = 1;
+        private const int OverlayToggleHotkeyId = 2;
 
         // Hidden form to receive Windows messages
         private class HotkeyForm : Form
         {
             public event Action? HotkeyPressed;
+            public event Action? OverlayToggleHotkeyPressed;
 
             public HotkeyForm()
             {
@@ -32,9 +35,14 @@ namespace ClipTyper
             {
                 if (m.Msg == GlobalHotkey.WM_HOTKEY)
                 {
-                    if (m.WParam.ToInt32() == HotkeyId)
+                    int id = m.WParam.ToInt32();
+                    if (id == HotkeyId)
                     {
                         HotkeyPressed?.Invoke();
+                    }
+                    else if (id == OverlayToggleHotkeyId)
+                    {
+                        OverlayToggleHotkeyPressed?.Invoke();
                     }
                 }
                 base.WndProc(ref m);
@@ -85,6 +93,7 @@ namespace ClipTyper
 
             _hiddenForm = new HotkeyForm();
             _hiddenForm.HotkeyPressed += OnHotkeyPressed;
+            _hiddenForm.OverlayToggleHotkeyPressed += OnOverlayToggleHotkeyPressed;
 
             var handle = _hiddenForm.Handle;
 
@@ -94,6 +103,16 @@ namespace ClipTyper
                 HotkeyId,
                 (GlobalHotkey.Modifiers)settings.HotkeyModifiers,
                 (Keys)settings.HotkeyKey);
+
+            // Register the overlay toggle hotkey if enabled
+            if (settings.OverlayToggleEnabled)
+            {
+                _overlayToggleHotkey = new GlobalHotkey(
+                    _hiddenForm.Handle,
+                    OverlayToggleHotkeyId,
+                    (GlobalHotkey.Modifiers)settings.OverlayToggleModifiers,
+                    (Keys)settings.OverlayToggleKey);
+            }
 
             // Show overlay if enabled in settings
             if (settings.OverlayEnabled)
@@ -170,6 +189,28 @@ namespace ClipTyper
             });
         }
 
+        private void OnOverlayToggleHotkeyPressed()
+        {
+            if (_hiddenForm.InvokeRequired)
+            {
+                _hiddenForm.BeginInvoke(new Action(OnOverlayToggleHotkeyPressed));
+                return;
+            }
+
+            var settings = SettingsManager.Current;
+            settings.OverlayEnabled = !settings.OverlayEnabled;
+            SettingsManager.Save();
+
+            if (settings.OverlayEnabled)
+            {
+                ShowOverlay();
+            }
+            else
+            {
+                HideOverlay();
+            }
+        }
+
         // ── Overlay Management ──────────────────────────────────────
 
         private void ShowOverlay()
@@ -203,10 +244,22 @@ namespace ClipTyper
 
         private void OnSettings(object? sender, EventArgs e)
         {
+            int originalScale = SettingsManager.Current.OverlayScalePercent;
             using var form = new SettingsForm();
-            form.SettingsSaved += (modifiers, key, delay, overlayEnabled, overlaySize, resetPosition, autoStart) =>
+
+            // Set up live preview handler
+            Action<int> liveScaleHandler = (scale) =>
             {
-                // Try to update the hotkey
+                if (_overlay != null && SettingsManager.Current.OverlayEnabled)
+                {
+                    _overlay.ApplyScale(scale);
+                }
+            };
+            form.LiveScaleChanged += liveScaleHandler;
+
+            form.SettingsSaved += (modifiers, key, delay, overlayEnabled, overlayScale, overlayMonitor, resetPosition, autoStart, toggleMods, toggleKey, toggleEnabled) =>
+            {
+                // Try to update the trigger hotkey
                 if (modifiers != _hotkey.CurrentModifier || key != _hotkey.CurrentKey)
                 {
                     if (!_hotkey.Reregister(modifiers, key))
@@ -221,14 +274,45 @@ namespace ClipTyper
                     }
                 }
 
+                // Try to update overlay toggle hotkey
+                if (toggleEnabled)
+                {
+                    if (_overlayToggleHotkey == null)
+                    {
+                        _overlayToggleHotkey = new GlobalHotkey(_hiddenForm.Handle, OverlayToggleHotkeyId, toggleMods, toggleKey);
+                    }
+                    else if (toggleMods != _overlayToggleHotkey.CurrentModifier || toggleKey != _overlayToggleHotkey.CurrentKey)
+                    {
+                        if (!_overlayToggleHotkey.Reregister(toggleMods, toggleKey))
+                        {
+                            MessageBox.Show(
+                                "Could not register the overlay toggle hotkey. It may be in use by another application.\n\n" +
+                                "The previous hotkey has been restored.",
+                                "Hotkey Registration Failed",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning);
+                            return;
+                        }
+                    }
+                }
+                else
+                {
+                    _overlayToggleHotkey?.Dispose();
+                    _overlayToggleHotkey = null;
+                }
+
                 // Save all settings
                 var s = SettingsManager.Current;
                 s.HotkeyModifiers = (int)modifiers;
                 s.HotkeyKey = (int)key;
                 s.KeystrokeDelayMs = delay;
                 s.OverlayEnabled = overlayEnabled;
-                s.OverlaySize = overlaySize;
+                s.OverlayScalePercent = overlayScale;
+                s.OverlayMonitorIndex = overlayMonitor;
                 s.AutoStartEnabled = autoStart;
+                s.OverlayToggleModifiers = (int)toggleMods;
+                s.OverlayToggleKey = (int)toggleKey;
+                s.OverlayToggleEnabled = toggleEnabled;
 
                 if (resetPosition)
                 {
@@ -243,7 +327,8 @@ namespace ClipTyper
                 {
                     if (_overlay != null)
                     {
-                        _overlay.ApplySize(overlaySize);
+                        _overlay.ApplyScale(overlayScale);
+                        _overlay.MoveToMonitor(overlayMonitor);
                         if (resetPosition)
                         {
                             _overlay.MoveToDefaultPosition();
@@ -266,7 +351,14 @@ namespace ClipTyper
                 }
             };
 
-            form.ShowDialog();
+            if (form.ShowDialog() != DialogResult.OK)
+            {
+                // Revert any live scale preview if canceled
+                if (_overlay != null && SettingsManager.Current.OverlayEnabled)
+                {
+                    _overlay.ApplyScale(originalScale);
+                }
+            }
         }
 
         // ── About Dialog ────────────────────────────────────────────
@@ -478,6 +570,7 @@ namespace ClipTyper
         {
             _trayIcon.Visible = false;
             _hotkey?.Dispose();
+            _overlayToggleHotkey?.Dispose();
             _overlay?.Dispose();
             _hiddenForm?.Dispose();
             Application.Exit();
