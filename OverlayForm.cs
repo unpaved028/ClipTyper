@@ -687,6 +687,9 @@ namespace ClipTyper
                 int localY = intersection.Top - Top;
                 Region = new Region(new Rectangle(localX, localY, intersection.Width, intersection.Height));
             }
+
+            // Re-apply TopMost because changing the Region can reset it
+            TopMost = true;
         }
 
         protected override void OnLocationChanged(EventArgs e)
@@ -750,6 +753,7 @@ namespace ClipTyper
             get
             {
                 var cp = base.CreateParams;
+                cp.ExStyle |= 0x00000008;       // WS_EX_TOPMOST
                 cp.ExStyle |= 0x00000080;       // WS_EX_TOOLWINDOW
                 cp.ExStyle |= 0x08000000;       // WS_EX_NOACTIVATE
                 return cp;

@@ -344,6 +344,13 @@ namespace ClipTyper
                     HideOverlay();
                 }
 
+                // Force topmost to be re-applied to ensure it stays on top
+                if (_overlay != null)
+                {
+                    _overlay.TopMost = false;
+                    _overlay.TopMost = true;
+                }
+
                 // Apply autostart changes (Winget mode only)
                 if (!SettingsManager.IsPortable)
                 {
@@ -358,6 +365,13 @@ namespace ClipTyper
                 {
                     _overlay.ApplyScale(originalScale);
                 }
+            }
+
+            // Force topmost to be re-applied after dialog is closed to prevent Z-order loss
+            if (_overlay != null)
+            {
+                _overlay.TopMost = false;
+                _overlay.TopMost = true;
             }
         }
 
