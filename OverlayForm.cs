@@ -141,17 +141,59 @@ namespace ClipTyper
             Controls.Add(_iconBox);
         }
 
+        private bool _hasUpdateBadge;
+
+        /// <summary>
+        /// Enables or disables the red update badge on the overlay icon.
+        /// </summary>
+        public void SetUpdateBadge(bool hasBadge)
+        {
+            if (_hasUpdateBadge != hasBadge)
+            {
+                _hasUpdateBadge = hasBadge;
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action(UpdateIconImage));
+                }
+                else
+                {
+                    UpdateIconImage();
+                }
+            }
+        }
+
         /// <summary>
         /// Selects the best icon for the current form size to avoid scaling.
         /// Small (64) and Medium (128) use the 128px icon.
         /// Large (256) uses the 256px icon.
+        /// Draws a red update badge in top-right corner if _hasUpdateBadge is true.
         /// </summary>
         private void UpdateIconImage()
         {
             if (_iconBox == null) return;
             var oldImage = _iconBox.Image;
             var icon = Width >= SizeLarge ? _overlayIcon256 : _overlayIcon128;
-            _iconBox.Image = icon?.ToBitmap();
+            var bmp = icon?.ToBitmap();
+
+            if (_hasUpdateBadge && bmp != null)
+            {
+                using var g = Graphics.FromImage(bmp);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                int badgeSize = Math.Max(12, bmp.Width / 6);
+                int margin = badgeSize / 4;
+                int x = bmp.Width - badgeSize - margin;
+                int y = margin;
+                using (var whiteBrush = new SolidBrush(Color.White))
+                {
+                    g.FillEllipse(whiteBrush, x - 2, y - 2, badgeSize + 4, badgeSize + 4);
+                }
+                using (var redBrush = new SolidBrush(Color.Red))
+                {
+                    g.FillEllipse(redBrush, x, y, badgeSize, badgeSize);
+                }
+            }
+
+            _iconBox.Image = bmp;
             oldImage?.Dispose();
         }
 

@@ -36,6 +36,10 @@ namespace ClipTyper
 
         // Autostart (only used in Winget/installed mode)
         public bool AutoStartEnabled { get; set; } = true;
+
+        // Automatic Update Check (v1.4.1+)
+        public bool AutoUpdateCheckEnabled { get; set; } = true;
+        public DateTime? LastUpdateCheckUtc { get; set; } = null;
     }
 
     /// <summary>

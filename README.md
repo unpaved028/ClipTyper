@@ -31,7 +31,7 @@ winget install unpaved028.ClipTyper
 - 🖥️ **Silent background app** — runs as a system tray icon, no window
 - 🖱️ **Floating overlay button** — optional on-screen button with multi-monitor support, edge snapping, live-preview scaling (25% - 200%), and a customizable visibility toggle hotkey
 - ⚙️ **Customizable hotkeys** — change the trigger hotkey and the overlay visibility toggle hotkey to any combinations you prefer
-- 🔄 **Update checker** — check for new versions directly from the About dialog
+- 🔄 **Automated update check** — checks for new releases on startup (24h throttled) with native tray notifications, visual update badges on tray icon and overlay, and release notes display in the About dialog
 
 ## Usage
 
@@ -70,6 +70,7 @@ Right-click the tray icon → **Settings** to configure:
 | **Overlay Toggle Hotkey** | Keyboard shortcut to show/hide the floating overlay button. | `Ctrl + Shift + H` |
 | **Reset Position** | Reset the overlay to the default position (right edge, center). | — |
 | **Run at Startup** | *(Installed version only)* Run ClipTyper automatically on Windows boot. | Enabled |
+| **Automatically check for updates** | Check GitHub automatically on launch for new releases (max 1x per 24h). | Enabled |
 
 **Settings Storage:**
 - **Installed Version (Installer/WinGet):** Program is installed under `%LocalAppData%\Programs\ClipTyper`. Settings are saved to `%AppData%\ClipTyper\settings.json`.
@@ -120,12 +121,18 @@ New-Item -Path ./publish-slim/portable.marker -ItemType File
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o ./publish-winget
 
 # 4. Compile Installer (requires Inno Setup installed)
-iscc /DMyAppVersion=1.4.0 setup.iss
+iscc /DMyAppVersion=1.4.1 setup.iss
 ```
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building.
 
 ## Changelog
+
+### v1.4.1
+- **Automated Background Update Check**: Automatically checks GitHub for new releases on app startup (throttled to 1 check per 24 hours).
+- **Notifications & Badges**: Shows native system tray balloon notifications on available updates, and displays visual red update dots on both the tray icon and the floating overlay button.
+- **Release Notes Display**: About dialog displays the first ~300 characters of release notes for new updates with a "Read more..." link opening the GitHub release page.
+- **Opt-Out Setting**: Configurable "Automatically check for updates" checkbox added to Settings dialog.
 
 ### v1.4.0
 - **New Inno Setup Installer**: Introduced a user-space non-admin installer (`ClipTyper-Setup.exe`) that automatically configures Start Menu shortcuts and Autostart registry settings during installation, and launches the app automatically.

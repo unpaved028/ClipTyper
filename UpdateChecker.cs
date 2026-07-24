@@ -25,7 +25,8 @@ namespace ClipTyper
             bool IsUpdateAvailable,
             string CurrentVersion,
             string LatestVersion,
-            string ReleaseUrl);
+            string ReleaseUrl,
+            string ReleaseNotes = "");
 
         /// <summary>
         /// Queries the GitHub API for the latest release and compares it
@@ -65,11 +66,17 @@ namespace ClipTyper
                     ? urlProp.GetString() ?? ReleasesPageUrl
                     : ReleasesPageUrl;
 
+                // Get the release notes (body field)
+                var bodyNotes = doc.RootElement.TryGetProperty("body", out var bodyProp)
+                    ? bodyProp.GetString() ?? ""
+                    : "";
+
                 return new UpdateCheckResult(
                     IsUpdateAvailable: latestVersion > current,
                     CurrentVersion: currentVersion,
                     LatestVersion: latestVersionStr,
-                    ReleaseUrl: htmlUrl);
+                    ReleaseUrl: htmlUrl,
+                    ReleaseNotes: bodyNotes);
             }
             catch
             {

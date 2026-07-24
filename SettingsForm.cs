@@ -31,6 +31,7 @@ namespace ClipTyper
         private ComboBox _monitorComboBox = null!;
         private Button _resetPositionBtn = null!;
         private CheckBox? _autostartCheckbox;
+        private CheckBox _autoUpdateCheckbox = null!;
         private Button _saveBtn = null!;
         private Button _cancelBtn = null!;
 
@@ -62,9 +63,9 @@ namespace ClipTyper
 
         /// <summary>
         /// Raised when the user saves settings. Parameters:
-        /// (Modifiers, Key, DelayMs, OverlayEnabled, OverlayScale, OverlayMonitor, ResetPosition, AutoStartEnabled, ToggleModifiers, ToggleKey, ToggleEnabled)
+        /// (Modifiers, Key, DelayMs, OverlayEnabled, OverlayScale, OverlayMonitor, ResetPosition, AutoStartEnabled, ToggleModifiers, ToggleKey, ToggleEnabled, AutoUpdateCheckEnabled)
         /// </summary>
-        public event Action<GlobalHotkey.Modifiers, Keys, int, bool, int, int, bool, bool, GlobalHotkey.Modifiers, Keys, bool>? SettingsSaved;
+        public event Action<GlobalHotkey.Modifiers, Keys, int, bool, int, int, bool, bool, GlobalHotkey.Modifiers, Keys, bool, bool>? SettingsSaved;
 
         /// <summary>
         /// Raised in real-time when the user moves the scale slider.
@@ -294,6 +295,25 @@ namespace ClipTyper
                 y += 60;
             }
 
+            // ── Updates Group ───────────────────────────────────────
+            var updatesGroup = new GroupBox
+            {
+                Text = "Updates",
+                Location = new Point(12, y),
+                Size = new Size(380, 50)
+            };
+
+            _autoUpdateCheckbox = new CheckBox
+            {
+                Text = "Automatically check for updates",
+                Location = new Point(12, 20),
+                AutoSize = true
+            };
+
+            updatesGroup.Controls.Add(_autoUpdateCheckbox);
+            Controls.Add(updatesGroup);
+            y += 60;
+
             // ── Buttons ─────────────────────────────────────────────
             _saveBtn = new Button
             {
@@ -362,6 +382,8 @@ namespace ClipTyper
                 // manually edited the registry or a previous save failed)
                 _autostartCheckbox.Checked = InstallHelper.IsAutoStartEnabled();
             }
+
+            _autoUpdateCheckbox.Checked = s.AutoUpdateCheckEnabled;
         }
 
         // ── Hotkey Recorder ─────────────────────────────────────────
@@ -524,7 +546,8 @@ namespace ClipTyper
                 autoStart,
                 _recordedToggleModifiers,
                 _recordedToggleKey,
-                true
+                true,
+                _autoUpdateCheckbox.Checked
             );
         }
 

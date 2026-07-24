@@ -15,6 +15,8 @@ namespace ClipTyper
         private GlobalHotkey _hotkey;
         private GlobalHotkey? _overlayToggleHotkey;
         private OverlayForm? _overlay;
+        private Icon? _badgedTrayIcon;
+        private UpdateChecker.UpdateCheckResult? _cachedUpdateResult;
         private const int HotkeyId = 1;
         private const int OverlayToggleHotkeyId = 2;
 
@@ -126,6 +128,107 @@ namespace ClipTyper
                 InstallHelper.EnsureShortcut();
                 InstallHelper.SetAutoStart(settings.AutoStartEnabled);
             }
+
+            // Check for updates in background (24h throttled)
+            RunStartupUpdateCheck();
+        }
+
+        // ── Automated Update Check & Badging ──────────────────────
+
+        private void RunStartupUpdateCheck()
+        {
+            var settings = SettingsManager.Current;
+            if (!settings.AutoUpdateCheckEnabled) return;
+
+            if (settings.LastUpdateCheckUtc.HasValue &&
+                (DateTime.UtcNow - settings.LastUpdateCheckUtc.Value).TotalHours < 24)
+            {
+                return;
+            }
+
+            Task.Run(async () =>
+            {
+                var result = await UpdateChecker.CheckAsync();
+                settings.LastUpdateCheckUtc = DateTime.UtcNow;
+                SettingsManager.Save();
+
+                if (result != null && result.IsUpdateAvailable)
+                {
+                    if (_hiddenForm.InvokeRequired)
+                    {
+                        _hiddenForm.BeginInvoke(new Action(() => NotifyUpdateAvailable(result)));
+                    }
+                    else
+                    {
+                        NotifyUpdateAvailable(result);
+                    }
+                }
+            });
+        }
+
+        private void NotifyUpdateAvailable(UpdateChecker.UpdateCheckResult result)
+        {
+            _cachedUpdateResult = result;
+            ApplyTrayIconBadge(true);
+            _overlay?.SetUpdateBadge(true);
+
+            _trayIcon.BalloonTipClicked -= OnBalloonTipClicked;
+            _trayIcon.BalloonTipClicked += OnBalloonTipClicked;
+            _trayIcon.ShowBalloonTip(
+                5000,
+                "ClipTyper Update Available",
+                $"Version v{result.LatestVersion} is available. Click here for details.",
+                ToolTipIcon.Info);
+        }
+
+        private void OnBalloonTipClicked(object? sender, EventArgs e)
+        {
+            OnAbout(sender, e);
+        }
+
+        private void ApplyTrayIconBadge(bool hasBadge)
+        {
+            if (!hasBadge)
+            {
+                _trayIcon.Icon = LoadEmbeddedIcon();
+                if (_badgedTrayIcon != null)
+                {
+                    _badgedTrayIcon.Dispose();
+                    _badgedTrayIcon = null;
+                }
+                return;
+            }
+
+            try
+            {
+                using var baseIcon = LoadEmbeddedIcon();
+                using var bmp = baseIcon.ToBitmap();
+                using var g = Graphics.FromImage(bmp);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                int size = Math.Max(8, bmp.Width / 4);
+                int margin = 1;
+                int x = bmp.Width - size - margin;
+                int y = margin;
+
+                using (var whiteBrush = new SolidBrush(Color.White))
+                {
+                    g.FillEllipse(whiteBrush, x - 1, y - 1, size + 2, size + 2);
+                }
+                using (var redBrush = new SolidBrush(Color.Red))
+                {
+                    g.FillEllipse(redBrush, x, y, size, size);
+                }
+
+                IntPtr hIcon = bmp.GetHicon();
+                var newIcon = Icon.FromHandle(hIcon);
+                _trayIcon.Icon = newIcon;
+                _badgedTrayIcon?.Dispose();
+                _badgedTrayIcon = newIcon;
+            }
+            catch
+            {
+                _trayIcon.Icon = LoadEmbeddedIcon();
+            }
         }
 
         // ── Shared Clip-Type Trigger ────────────────────────────────
@@ -229,6 +332,11 @@ namespace ClipTyper
                 SettingsManager.Save();
             };
 
+            if (_cachedUpdateResult != null && _cachedUpdateResult.IsUpdateAvailable)
+            {
+                _overlay.SetUpdateBadge(true);
+            }
+
             _overlay.Show();
         }
 
@@ -257,7 +365,7 @@ namespace ClipTyper
             };
             form.LiveScaleChanged += liveScaleHandler;
 
-            form.SettingsSaved += (modifiers, key, delay, overlayEnabled, overlayScale, overlayMonitor, resetPosition, autoStart, toggleMods, toggleKey, toggleEnabled) =>
+            form.SettingsSaved += (modifiers, key, delay, overlayEnabled, overlayScale, overlayMonitor, resetPosition, autoStart, toggleMods, toggleKey, toggleEnabled, autoUpdateCheckEnabled) =>
             {
                 // Try to update the trigger hotkey
                 if (modifiers != _hotkey.CurrentModifier || key != _hotkey.CurrentKey)
@@ -313,6 +421,7 @@ namespace ClipTyper
                 s.OverlayToggleModifiers = (int)toggleMods;
                 s.OverlayToggleKey = (int)toggleKey;
                 s.OverlayToggleEnabled = toggleEnabled;
+                s.AutoUpdateCheckEnabled = autoUpdateCheckEnabled;
 
                 if (resetPosition)
                 {
@@ -377,6 +486,8 @@ namespace ClipTyper
 
         // ── About Dialog ────────────────────────────────────────────
 
+        // ── About Dialog ────────────────────────────────────────────
+
         private void OnAbout(object? sender, EventArgs e)
         {
             string version = UpdateChecker.GetCurrentVersion();
@@ -405,7 +516,7 @@ namespace ClipTyper
             var aboutForm = new Form
             {
                 Text = "About ClipTyper",
-                Size = new Size(380, 310),
+                Size = new Size(380, 260),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 MaximizeBox = false,
                 MinimizeBox = false,
@@ -455,7 +566,7 @@ namespace ClipTyper
             {
                 Text = "",
                 Location = new Point(15, 180),
-                Size = new Size(340, 40),
+                Size = new Size(340, 22),
                 AutoSize = false
             };
 
@@ -464,66 +575,24 @@ namespace ClipTyper
                 updateBtn.Enabled = false;
                 updateBtn.Text = "Checking...";
                 updateLabel.Text = "";
-
-                // Remove any previously added update action controls
                 RemoveControlByName(aboutForm, "_updateAction");
 
                 var result = await UpdateChecker.CheckAsync();
+                SettingsManager.Current.LastUpdateCheckUtc = DateTime.UtcNow;
+                SettingsManager.Save();
 
                 if (result == null)
                 {
                     updateLabel.Text = "Could not check for updates. Please check your internet connection.";
-                }
-                else if (result.IsUpdateAvailable)
-                {
-                    updateLabel.Text = $"Update available: v{result.LatestVersion}";
-
-                    if (!SettingsManager.IsPortable)
-                    {
-                        // Winget mode: show winget command with copy button
-                        string wingetCmd = "winget upgrade unpaved028.ClipTyper";
-                        var cmdLabel = new Label
-                        {
-                            Name = "_updateAction",
-                            Text = wingetCmd,
-                            Location = new Point(15, 205),
-                            AutoSize = true,
-                            Font = new Font("Consolas", 9f),
-                            ForeColor = Color.DarkBlue
-                        };
-
-                        var copyBtn = new Button
-                        {
-                            Name = "_updateAction",
-                            Text = "📋 Copy",
-                            Location = new Point(290, 201),
-                            Size = new Size(65, 23)
-                        };
-                        copyBtn.Click += (_, _) =>
-                        {
-                            Clipboard.SetText(wingetCmd);
-                            copyBtn.Text = "✓ Copied";
-                        };
-
-                        aboutForm.Controls.AddRange(new Control[] { cmdLabel, copyBtn });
-                    }
-                    else
-                    {
-                        // Portable/Slim: show GitHub download link
-                        var downloadLink = new LinkLabel
-                        {
-                            Name = "_updateAction",
-                            Text = "Download from GitHub",
-                            Location = new Point(15, 205),
-                            AutoSize = true
-                        };
-                        downloadLink.Click += (_, _) => OpenUrl(result.ReleaseUrl);
-                        aboutForm.Controls.Add(downloadLink);
-                    }
+                    aboutForm.Size = new Size(380, 260);
                 }
                 else
                 {
-                    updateLabel.Text = $"You're running the latest version (v{result.CurrentVersion}).";
+                    if (result.IsUpdateAvailable)
+                    {
+                        NotifyUpdateAvailable(result);
+                    }
+                    RenderUpdateResult(aboutForm, updateLabel, result);
                 }
 
                 updateBtn.Text = "Check for Updates";
@@ -544,7 +613,113 @@ namespace ClipTyper
                 updateBtn, updateLabel, closeBtn
             });
             aboutForm.AcceptButton = closeBtn;
+
+            // If an update is already known from background check, render it immediately
+            if (_cachedUpdateResult != null && _cachedUpdateResult.IsUpdateAvailable)
+            {
+                RenderUpdateResult(aboutForm, updateLabel, _cachedUpdateResult);
+            }
+
             aboutForm.ShowDialog();
+        }
+
+        private static void RenderUpdateResult(Form aboutForm, Label updateLabel, UpdateChecker.UpdateCheckResult result)
+        {
+            RemoveControlByName(aboutForm, "_updateAction");
+
+            if (result.IsUpdateAvailable)
+            {
+                updateLabel.Text = $"Update available: v{result.LatestVersion}";
+                int currentY = 205;
+
+                // Display release notes snippet if present
+                if (!string.IsNullOrWhiteSpace(result.ReleaseNotes))
+                {
+                    string notes = result.ReleaseNotes.Trim();
+                    if (notes.Length > 300)
+                    {
+                        notes = notes.Substring(0, 300).TrimEnd() + "...";
+                    }
+
+                    var notesBox = new TextBox
+                    {
+                        Name = "_updateAction",
+                        Text = notes,
+                        Location = new Point(15, currentY),
+                        Size = new Size(335, 70),
+                        Multiline = true,
+                        ReadOnly = true,
+                        ScrollBars = ScrollBars.Vertical,
+                        BackColor = SystemColors.Control,
+                        BorderStyle = BorderStyle.FixedSingle,
+                        Font = new Font("Segoe UI", 8.5f)
+                    };
+
+                    var readMoreLink = new LinkLabel
+                    {
+                        Name = "_updateAction",
+                        Text = "Read more...",
+                        Location = new Point(15, currentY + 75),
+                        AutoSize = true
+                    };
+                    readMoreLink.Click += (_, _) => OpenUrl(result.ReleaseUrl);
+
+                    aboutForm.Controls.AddRange(new Control[] { notesBox, readMoreLink });
+                    currentY += 98;
+                }
+
+                if (!SettingsManager.IsPortable)
+                {
+                    // Winget mode: show winget command with copy button
+                    string wingetCmd = "winget upgrade unpaved028.ClipTyper";
+                    var cmdLabel = new Label
+                    {
+                        Name = "_updateAction",
+                        Text = wingetCmd,
+                        Location = new Point(15, currentY + 3),
+                        AutoSize = true,
+                        Font = new Font("Consolas", 9f),
+                        ForeColor = Color.DarkBlue
+                    };
+
+                    var copyBtn = new Button
+                    {
+                        Name = "_updateAction",
+                        Text = "📋 Copy",
+                        Location = new Point(285, currentY),
+                        Size = new Size(65, 23)
+                    };
+                    copyBtn.Click += (_, _) =>
+                    {
+                        Clipboard.SetText(wingetCmd);
+                        copyBtn.Text = "✓ Copied";
+                    };
+
+                    aboutForm.Controls.AddRange(new Control[] { cmdLabel, copyBtn });
+                    currentY += 35;
+                }
+                else
+                {
+                    // Portable/Slim: show GitHub download link
+                    var downloadLink = new LinkLabel
+                    {
+                        Name = "_updateAction",
+                        Text = "Download from GitHub",
+                        Location = new Point(15, currentY + 3),
+                        AutoSize = true
+                    };
+                    downloadLink.Click += (_, _) => OpenUrl(result.ReleaseUrl);
+                    aboutForm.Controls.Add(downloadLink);
+                    currentY += 25;
+                }
+
+                aboutForm.Size = new Size(380, currentY + 45);
+            }
+            else
+            {
+                updateLabel.Text = $"You're running the latest version (v{result.CurrentVersion}).";
+                aboutForm.Size = new Size(380, 260);
+            }
         }
 
         /// <summary>

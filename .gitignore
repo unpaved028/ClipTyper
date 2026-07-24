@@ -30,7 +30,7 @@ nuget.config
 .DS_Store
 Thumbs.db
 
-# ─── Agentic / AI tooling (NEVER publish) ─────────────────────
+# Agentic / AI tooling (NEVER publish) ─────────────────────
 .agents/
 .planning/
 .antigravity/
@@ -40,6 +40,10 @@ prompts/
 AGENTS.md
 CLAUDE.md
 DEPLOY.md
+
+# Local / Temporary Planning
+ROADMAP.md
+Roadmap.md
 
 # WinGet Manifests
 winget-manifest/
