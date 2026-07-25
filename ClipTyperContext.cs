@@ -243,10 +243,23 @@ namespace ClipTyper
         /// </param>
         private void TriggerClipType(bool restoreFocus)
         {
+            IntPtr targetHWnd = NativeMethods.GetForegroundWindow();
+
+            // 1. UIPI Check: Target window elevated?
+            if (NativeMethods.IsTargetWindowElevated(targetHWnd))
+            {
+                Logger.LogWarning("Target window is elevated (Admin). Input blocked by UIPI.");
+                MessageBox.Show(
+                    "The target window is running with Administrator privileges.\n\nClipTyper is currently running without Administrator privileges. Windows is blocking keyboard input to this window.\n\nPlease launch ClipTyper as Administrator as well.",
+                    "ClipTyper - Administrator Privileges Required",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
             string textToType = "";
             try
             {
-                // Clipboard must be accessed from an STA thread
                 if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
                 {
                     if (Clipboard.ContainsText())
@@ -256,7 +269,6 @@ namespace ClipTyper
                 }
                 else
                 {
-                    // Marshal to STA thread for clipboard access
                     var thread = new Thread(() =>
                     {
                         if (Clipboard.ContainsText())
@@ -271,13 +283,77 @@ namespace ClipTyper
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Clipboard error: {ex.Message}");
+                Logger.LogError("Clipboard error", ex);
             }
 
-            if (!string.IsNullOrEmpty(textToType))
+            if (string.IsNullOrEmpty(textToType))
             {
-                int delay = SettingsManager.Current.KeystrokeDelayMs;
-                KeyboardSimulator.SendText(textToType, delay);
+                return;
+            }
+
+            var settings = SettingsManager.Current;
+
+            // 2. Max Text Length Check & Confirmation
+            if (settings.MaxTextLengthThreshold > 0 && textToType.Length > settings.MaxTextLengthThreshold)
+            {
+                double estSeconds = (textToType.Length * (settings.KeystrokeDelayMs + 5)) / 1000.0;
+                string timeStr = estSeconds >= 60 ? $"{estSeconds / 60:F1} minutes" : $"{estSeconds:F0} seconds";
+
+                var res = MessageBox.Show(
+                    $"The clipboard text contains {textToType.Length:N0} characters.\n\nTyping will take approximately {timeStr}.\n\nDo you want to proceed with typing?",
+                    "ClipTyper - Large Text",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (res != DialogResult.Yes)
+                {
+                    Logger.LogInfo("Large text typing cancelled by user.");
+                    return;
+                }
+
+                // Restore focus to target window after user confirmed the dialog
+                NativeMethods.ForceForegroundWindow(targetHWnd);
+                Thread.Sleep(200);
+            }
+
+            // 3. Visual Feedback & Typing Simulation
+            _overlay?.SetTypingState(true, 0, textToType.Length);
+
+            TypeResult result = KeyboardSimulator.SendText(
+                textToType,
+                delayMs: settings.KeystrokeDelayMs,
+                targetHWnd: targetHWnd,
+                enableVkMode: settings.EnableVkCompatibilityMode,
+                sanitize: settings.SanitizeInput,
+                onProgress: (current, total) =>
+                {
+                    _overlay?.SetTypingState(true, current, total);
+                }
+            );
+
+            _overlay?.SetTypingState(false, completed: (result == TypeResult.Completed));
+
+            // 4. Handle Result
+            if (result == TypeResult.Completed)
+            {
+                if (settings.SoundFeedbackEnabled)
+                {
+                    try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
+                }
+                Logger.LogInfo($"Successfully typed {textToType.Length} characters.");
+            }
+            else if (result == TypeResult.FocusLost)
+            {
+                Logger.LogWarning("Typing process cancelled due to focus loss.");
+                MessageBox.Show(
+                    "Typing was cancelled because the active window changed.\n\nPlease refocus the target window and try again.",
+                    "ClipTyper - Typing Cancelled",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            else if (result == TypeResult.AbortedByEscape)
+            {
+                Logger.LogInfo("Typing cancelled by pressing Escape.");
             }
         }
 
@@ -365,7 +441,7 @@ namespace ClipTyper
             };
             form.LiveScaleChanged += liveScaleHandler;
 
-            form.SettingsSaved += (modifiers, key, delay, overlayEnabled, overlayScale, overlayMonitor, resetPosition, autoStart, toggleMods, toggleKey, toggleEnabled, autoUpdateCheckEnabled) =>
+            form.SettingsSaved += (modifiers, key, delay, overlayEnabled, overlayScale, overlayMonitor, resetPosition, autoStart, toggleMods, toggleKey, toggleEnabled, autoUpdateCheckEnabled, sanitize, maxLen, vkMode, sound) =>
             {
                 // Try to update the trigger hotkey
                 if (modifiers != _hotkey.CurrentModifier || key != _hotkey.CurrentKey)
@@ -422,6 +498,11 @@ namespace ClipTyper
                 s.OverlayToggleKey = (int)toggleKey;
                 s.OverlayToggleEnabled = toggleEnabled;
                 s.AutoUpdateCheckEnabled = autoUpdateCheckEnabled;
+
+                s.SanitizeInput = sanitize;
+                s.MaxTextLengthThreshold = maxLen;
+                s.EnableVkCompatibilityMode = vkMode;
+                s.SoundFeedbackEnabled = sound;
 
                 if (resetPosition)
                 {

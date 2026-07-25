@@ -26,10 +26,13 @@ winget install unpaved028.ClipTyper
 - 🎯 **Paste anywhere** — works in RDP sessions, KVM consoles, web terminals, and password fields that block clipboard paste
 - 📦 **Fully portable** — single `.exe`, no installation needed
 - 🔒 **No admin rights** — runs entirely in user-space
-- ⌨️ **Hardware-level input** — uses `SendInput` with Unicode characters, not `SendKeys`
+- ⌨️ **Hardware-level input** — uses `SendInput` with Unicode characters or optional VK keycode mapping
+- 🛡️ **Typing safety & robustness** — Escape emergency abort, focus-loss protection, single-instance guard, max text length confirmation dialog, and input sanitization (BOM, null-bytes, zero-width spaces filter)
+- ⚡ **Teams & Remote Desktop compatibility** — optional VK compatibility mode translating characters to real virtual keycodes for MS Teams control share, Citrix, and RDP
+- 🛡️ **UIPI elevation warning** — clear alert dialog when attempting to type into administrator-elevated target windows
 - 🕐 **Configurable timing** — adjustable keystroke delay (5–100ms) ensures no characters are dropped
-- 🖥️ **Silent background app** — runs as a system tray icon, no window
-- 🖱️ **Floating overlay button** — optional on-screen button with multi-monitor support, edge snapping, live-preview scaling (25% - 200%), and a customizable visibility toggle hotkey
+- 🖥️ **Silent background app** — runs as a system tray icon with single-instance guard
+- 🖱️ **Floating overlay button** — optional on-screen button with multi-monitor support, edge snapping, live-preview scaling (25% - 200%), pulsing typing animation, completion checkmark, and customizable visibility toggle hotkey
 - ⚙️ **Customizable hotkeys** — change the trigger hotkey and the overlay visibility toggle hotkey to any combinations you prefer
 - 🔄 **Automated update check** — checks for new releases on startup (24h throttled) with native tray notifications, visual update badges on tray icon and overlay, and release notes display in the About dialog
 
@@ -42,7 +45,7 @@ winget install unpaved028.ClipTyper
 3. **Click** into the target window where you want to type
 4. **Press** `Ctrl + Shift + T` — ClipTyper types the clipboard content character by character
 
-> **Tip:** For passwords, copy the password first, then click into the password field and press `Ctrl+Shift+T`.
+> **Tip:** Press `Escape` at any time during typing to abort instantly!
 
 ### Overlay Button (for RDP / Fullscreen Sessions)
 
@@ -64,6 +67,10 @@ Right-click the tray icon → **Settings** to configure:
 |---|---|---|
 | **Trigger Hotkey** | The keyboard shortcut to trigger typing. Validates if the hotkey is in use. | `Ctrl + Shift + T` |
 | **Keystroke Delay** | Delay between each simulated keystroke (5–100ms). Increase for slow/remote targets. | 25ms |
+| **Clean Text** | Removes invisible control chars, BOM, null-bytes, zero-width spaces before typing. | Enabled |
+| **Confirm Before Long Text** | Shows duration estimate confirmation dialog before typing long clipboard text. | Enabled (> 5,000 chars) |
+| **VK Compatibility Mode** | Translates characters to physical virtual keycodes for MS Teams control share / RDP. | Disabled |
+| **Play Sound Signal** | Plays a system sound signal upon typing completion. | Disabled |
 | **Show Overlay Button** | Enable/disable the floating overlay button. | Disabled |
 | **Scale** | Scale percentage slider (25%–200%) with real-time preview. | 100% |
 | **Monitor** | Select which display monitor to position the overlay on. | Primary Monitor |
@@ -121,18 +128,21 @@ New-Item -Path ./publish-slim/portable.marker -ItemType File
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o ./publish-winget
 
 # 4. Compile Installer (requires Inno Setup installed)
-iscc /DMyAppVersion=1.4.1 setup.iss
+iscc /DMyAppVersion=1.5.0 setup.iss
 ```
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building.
 
 ## Changelog
 
-### v1.4.1
-- **Automated Background Update Check**: Automatically checks GitHub for new releases on app startup (throttled to 1 check per 24 hours).
-- **Notifications & Badges**: Shows native system tray balloon notifications on available updates, and displays visual red update dots on both the tray icon and the floating overlay button.
-- **Release Notes Display**: About dialog displays the first ~300 characters of release notes for new updates with a "Read more..." link opening the GitHub release page.
-- **Opt-Out Setting**: Configurable "Automatically check for updates" checkbox added to Settings dialog.
+### v1.5.0
+- 🛡️ **Emergency Abort & Focus Safety**: Immediate cancellation of typing when pressing `Escape` or when focus switches to another window.
+- 🔒 **Single-Instance Guard**: Mutex-based check prevents launching multiple ClipTyper instances simultaneously.
+- ⚡ **Teams & Remote Desktop Compatibility**: New optional VK compatibility mode for Microsoft Teams control share, RDP, and VMs.
+- 📝 **Input Sanitization**: Automatic cleaning of clipboard text before typing (filters BOM, null-bytes, and invisible control characters).
+- ⚠️ **Long Text Protection**: Configurable confirmation dialog before typing very long texts with estimated duration.
+- 🛡️ **Admin Rights Detection (UIPI)**: Clear alert dialog when target window is running with Administrator privileges.
+- 📊 **Visual Progress & Logging**: Progress animation on overlay and tray icon, plus structured rotating file logging (`clip-typer.log`).
 
 ### v1.4.0
 - **New Inno Setup Installer**: Introduced a user-space non-admin installer (`ClipTyper-Setup.exe`) that automatically configures Start Menu shortcuts and Autostart registry settings during installation, and launches the app automatically.

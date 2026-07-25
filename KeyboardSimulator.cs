@@ -1,18 +1,22 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 namespace ClipTyper
 {
+    public enum TypeResult
+    {
+        Completed,
+        FocusLost,
+        AbortedByEscape
+    }
+
     public static class KeyboardSimulator
     {
         [DllImport("user32.dll", SetLastError = true)]
         public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
-        /// <summary>
-        /// Retrieves the status of a virtual key at call time.
-        /// If the high-order bit is set, the key is currently pressed.
-        /// </summary>
         [DllImport("user32.dll")]
         public static extern short GetAsyncKeyState(int vKey);
 
@@ -59,18 +63,35 @@ namespace ClipTyper
         public const uint KEYEVENTF_UNICODE = 0x0004;
         public const uint KEYEVENTF_KEYUP = 0x0002;
 
-        // Virtual key codes for modifier keys
+        // Virtual key codes
         private const ushort VK_SHIFT    = 0x10;
         private const ushort VK_CONTROL  = 0x11;
         private const ushort VK_MENU     = 0x12;  // Alt
+        private const ushort VK_ESCAPE   = 0x1B;
         private const ushort VK_LWIN     = 0x5B;
         private const ushort VK_RWIN     = 0x5C;
 
         /// <summary>
-        /// Sends KeyUp events for all modifier keys (Ctrl, Shift, Alt, Win)
-        /// to prevent them from interfering with typed characters.
-        /// This is critical because the hotkey (Ctrl+Shift+T) leaves those
-        /// keys in a "pressed" state from the OS perspective.
+        /// Sanitizes text by removing non-printable control characters, BOM, zero-width spaces, etc.
+        /// </summary>
+        public static string SanitizeText(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return string.Empty;
+
+            StringBuilder sb = new StringBuilder(input.Length);
+            foreach (char c in input)
+            {
+                // Filter out BOM, zero-width spaces, null bytes, soft hyphens, directional marks
+                if (c == '\uFEFF' || c == '\u200B' || c == '\0' || c == '\u00AD' || c == '\u200E' || c == '\u200F')
+                    continue;
+
+                sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Sends KeyUp events for all modifier keys (Ctrl, Shift, Alt, Win).
         /// </summary>
         public static void ReleaseModifiers()
         {
@@ -78,7 +99,6 @@ namespace ClipTyper
 
             foreach (var vk in modifiers)
             {
-                // Only release keys that are actually pressed
                 if ((GetAsyncKeyState(vk) & 0x8000) != 0)
                 {
                     INPUT[] inputs = new INPUT[1];
@@ -91,51 +111,122 @@ namespace ClipTyper
         }
 
         /// <summary>
-        /// Simulates typing text by sending Unicode characters directly.
-        /// Automatically releases modifier keys first to prevent interference.
-        /// KeyDown and KeyUp are sent as separate calls to avoid key-repeat
-        /// artifacts caused by the OS not processing batched up/down pairs
-        /// quickly enough.
+        /// Simulates typing text into the target window.
+        /// Performs focus checks, Escape emergency abort detection, and optional VK compatibility mode.
         /// </summary>
-        /// <param name="text">The text to type.</param>
-        /// <param name="delayMs">Delay between each keystroke in milliseconds.</param>
-        public static void SendText(string text, int delayMs = 25)
+        public static TypeResult SendText(
+            string text,
+            int delayMs = 25,
+            IntPtr targetHWnd = default,
+            bool enableVkMode = false,
+            bool sanitize = true,
+            Action<int, int>? onProgress = null,
+            Func<bool>? isCancelRequested = null)
         {
-            if (string.IsNullOrEmpty(text)) return;
+            if (string.IsNullOrEmpty(text)) return TypeResult.Completed;
 
-            // Release any held modifier keys (Ctrl, Shift, Alt) before typing.
-            // Without this, the hotkey combo bleeds into the typed characters.
-            ReleaseModifiers();
-            Thread.Sleep(50); // Let the OS process the key releases
-
-            foreach (char c in text)
+            if (sanitize)
             {
-                // Skip carriage returns — we handle newlines via '\n' → VK_RETURN
+                text = SanitizeText(text);
+            }
+
+            ReleaseModifiers();
+            Thread.Sleep(50); // Let OS process key releases
+
+            int totalChars = text.Length;
+
+            for (int i = 0; i < totalChars; i++)
+            {
+                // 1. Emergency Abort via Escape
+                if ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0 || isCancelRequested?.Invoke() == true)
+                {
+                    ReleaseModifiers();
+                    return TypeResult.AbortedByEscape;
+                }
+
+                // 2. Focus-Loss Protection
+                if (targetHWnd != IntPtr.Zero && NativeMethods.GetForegroundWindow() != targetHWnd)
+                {
+                    ReleaseModifiers();
+                    return TypeResult.FocusLost;
+                }
+
+                char c = text[i];
+
+                // Skip carriage returns — newlines handled via '\n' -> VK_RETURN
                 if (c == '\r') continue;
 
-                // For newlines, send the Enter key via virtual key code
-                // instead of Unicode, as some apps don't handle Unicode LF well.
                 if (c == '\n')
                 {
                     SendKeyPress(0x0D, isVirtualKey: true); // VK_RETURN
+                }
+                else if (enableVkMode)
+                {
+                    SendCharVk(c);
                 }
                 else
                 {
                     SendKeyPress(c, isVirtualKey: false);
                 }
 
-                // Delay between keystrokes so target apps don't drop characters
+                onProgress?.Invoke(i + 1, totalChars);
+
                 if (delayMs > 0)
                 {
                     Thread.Sleep(delayMs);
                 }
             }
+
+            return TypeResult.Completed;
         }
 
-        /// <summary>
-        /// Sends a single key press (down + up) as two separate SendInput calls
-        /// with a small gap to ensure the OS fully processes each event.
-        /// </summary>
+        private static void SendCharVk(char c)
+        {
+            short scan = NativeMethods.VkKeyScanW(c);
+            if (scan == -1)
+            {
+                // Fallback to Unicode mode if character cannot be mapped on current layout
+                SendKeyPress(c, isVirtualKey: false);
+                return;
+            }
+
+            byte vkCode = (byte)(scan & 0xFF);
+            byte shiftState = (byte)((scan >> 8) & 0xFF);
+
+            bool shift = (shiftState & 1) != 0;
+            bool ctrl = (shiftState & 2) != 0;
+            bool alt = (shiftState & 4) != 0;
+
+            if (shift) SendModifierDown(VK_SHIFT);
+            if (ctrl) SendModifierDown(VK_CONTROL);
+            if (alt) SendModifierDown(VK_MENU);
+
+            SendKeyPress(vkCode, isVirtualKey: true);
+
+            if (alt) SendModifierUp(VK_MENU);
+            if (ctrl) SendModifierUp(VK_CONTROL);
+            if (shift) SendModifierUp(VK_SHIFT);
+        }
+
+        private static void SendModifierDown(ushort vk)
+        {
+            INPUT[] input = new INPUT[1];
+            input[0] = new INPUT { type = INPUT_KEYBOARD };
+            input[0].U.ki.wVk = vk;
+            SendInput(1, input, INPUT.Size);
+            Thread.Sleep(2);
+        }
+
+        private static void SendModifierUp(ushort vk)
+        {
+            INPUT[] input = new INPUT[1];
+            input[0] = new INPUT { type = INPUT_KEYBOARD };
+            input[0].U.ki.wVk = vk;
+            input[0].U.ki.dwFlags = KEYEVENTF_KEYUP;
+            SendInput(1, input, INPUT.Size);
+            Thread.Sleep(2);
+        }
+
         private static void SendKeyPress(ushort keyOrChar, bool isVirtualKey)
         {
             INPUT[] down = new INPUT[1];
@@ -161,10 +252,6 @@ namespace ClipTyper
                 up[0].U.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
             }
 
-            // Send KeyDown, wait, then send KeyUp.
-            // Generous gap prevents key-repeat and ensures the target
-            // application fully registers each character — critical for
-            // password fields and remote desktop sessions.
             SendInput(1, down, INPUT.Size);
             Thread.Sleep(5);
             SendInput(1, up, INPUT.Size);

@@ -71,5 +71,86 @@ namespace ClipTyper
 
             return SetForegroundWindow(hWnd);
         }
+
+        // VK Key mapping P/Invokes for compatibility mode
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern short VkKeyScanW(char ch);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
+
+        // Process elevation & UIPI P/Invokes
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass, out int TokenInformation, int TokenInformationLength, out int ReturnLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool CloseHandle(IntPtr hObject);
+
+        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+        private const uint TOKEN_QUERY = 0x0008;
+        private const int TokenElevation = 20;
+        private const int ERROR_ACCESS_DENIED = 5;
+
+        /// <summary>
+        /// Checks if the process of the given window is running with higher privileges
+        /// (Elevated / Admin) while ClipTyper is running non-elevated (UIPI restriction).
+        /// </summary>
+        public static bool IsTargetWindowElevated(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return false;
+
+            GetWindowThreadProcessId(hWnd, out uint targetPid);
+            if (targetPid == 0) return false;
+
+            bool currentIsElevated = IsProcessElevatedInternal(System.Diagnostics.Process.GetCurrentProcess().Handle);
+            if (currentIsElevated) return false; // If ClipTyper is Admin, UIPI won't block it
+
+            IntPtr hTargetProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, targetPid);
+            if (hTargetProcess == IntPtr.Zero)
+            {
+                int error = Marshal.GetLastWin32Error();
+                if (error == ERROR_ACCESS_DENIED)
+                {
+                    // Access denied trying to query target process -> Target is elevated
+                    return true;
+                }
+                return false;
+            }
+
+            try
+            {
+                bool targetIsElevated = IsProcessElevatedInternal(hTargetProcess);
+                return targetIsElevated && !currentIsElevated;
+            }
+            finally
+            {
+                CloseHandle(hTargetProcess);
+            }
+        }
+
+        private static bool IsProcessElevatedInternal(IntPtr hProcess)
+        {
+            if (!OpenProcessToken(hProcess, TOKEN_QUERY, out IntPtr hToken))
+                return false;
+
+            try
+            {
+                if (GetTokenInformation(hToken, TokenElevation, out int isElevated, sizeof(int), out _))
+                {
+                    return isElevated != 0;
+                }
+            }
+            finally
+            {
+                CloseHandle(hToken);
+            }
+            return false;
+        }
     }
 }

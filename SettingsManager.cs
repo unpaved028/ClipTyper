@@ -24,6 +24,10 @@ namespace ClipTyper
 
         // Typing
         public int KeystrokeDelayMs { get; set; } = 25;
+        public bool SanitizeInput { get; set; } = true;
+        public int MaxTextLengthThreshold { get; set; } = 5000; // 0 = disabled
+        public bool EnableVkCompatibilityMode { get; set; } = false;
+        public bool SoundFeedbackEnabled { get; set; } = false;
 
         // Hotkey  (defaults: Ctrl+Shift = 0x0006, T = 0x54)
         public int HotkeyModifiers { get; set; } = 0x0006;
@@ -59,7 +63,7 @@ namespace ClipTyper
     public static class SettingsManager
     {
         private static readonly string ExeDir;
-        private static readonly string SettingsDir;
+        public static string SettingsDir { get; }
         private static readonly string SettingsFile;
 
         // JSON options are configured via the source-generated context

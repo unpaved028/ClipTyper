@@ -167,6 +167,62 @@ namespace ClipTyper
         /// Small (64) and Medium (128) use the 128px icon.
         /// Large (256) uses the 256px icon.
         /// Draws a red update badge in top-right corner if _hasUpdateBadge is true.
+        private bool _isTyping;
+        private int _typingCurrent;
+        private int _typingTotal;
+        private bool _isTypingCompleted;
+        private DateTime _typingStartTime;
+        private System.Windows.Forms.Timer? _completedResetTimer;
+
+        /// <summary>
+        /// Updates the typing visual state on the overlay (pulsing border, typing progress, completion checkmark).
+        /// </summary>
+        public void SetTypingState(bool isTyping, int current = 0, int total = 0, bool completed = false)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => SetTypingState(isTyping, current, total, completed)));
+                return;
+            }
+
+            _isTyping = isTyping;
+            if (isTyping && _typingStartTime == default)
+            {
+                _typingStartTime = DateTime.Now;
+            }
+            else if (!isTyping && !completed)
+            {
+                _typingStartTime = default;
+            }
+
+            _typingCurrent = current;
+            _typingTotal = total;
+            _isTypingCompleted = completed;
+
+            if (completed)
+            {
+                _typingStartTime = default;
+                _completedResetTimer?.Stop();
+                _completedResetTimer?.Dispose();
+                _completedResetTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+                _completedResetTimer.Tick += (s, e) =>
+                {
+                    _completedResetTimer.Stop();
+                    _isTypingCompleted = false;
+                    UpdateIconImage();
+                };
+                _completedResetTimer.Start();
+            }
+
+            UpdateIconImage();
+        }
+
+        /// <summary>
+        /// Selects the best icon for the current form size to avoid scaling.
+        /// Small (64) and Medium (128) use the 128px icon.
+        /// Large (256) uses the 256px icon.
+        /// Draws a red update badge in top-right corner if _hasUpdateBadge is true.
+        /// Draws typing progress or completion checkmark when active.
         /// </summary>
         private void UpdateIconImage()
         {
@@ -175,21 +231,61 @@ namespace ClipTyper
             var icon = Width >= SizeLarge ? _overlayIcon256 : _overlayIcon128;
             var bmp = icon?.ToBitmap();
 
-            if (_hasUpdateBadge && bmp != null)
+            if (bmp != null)
             {
                 using var g = Graphics.FromImage(bmp);
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                int badgeSize = Math.Max(12, bmp.Width / 6);
-                int margin = badgeSize / 4;
-                int x = bmp.Width - badgeSize - margin;
-                int y = margin;
-                using (var whiteBrush = new SolidBrush(Color.White))
+
+                if (_hasUpdateBadge)
                 {
-                    g.FillEllipse(whiteBrush, x - 2, y - 2, badgeSize + 4, badgeSize + 4);
+                    int badgeSize = Math.Max(12, bmp.Width / 6);
+                    int margin = badgeSize / 4;
+                    int x = bmp.Width - badgeSize - margin;
+                    int y = margin;
+                    using (var whiteBrush = new SolidBrush(Color.White))
+                    {
+                        g.FillEllipse(whiteBrush, x - 2, y - 2, badgeSize + 4, badgeSize + 4);
+                    }
+                    using (var redBrush = new SolidBrush(Color.Red))
+                    {
+                        g.FillEllipse(redBrush, x, y, badgeSize, badgeSize);
+                    }
                 }
-                using (var redBrush = new SolidBrush(Color.Red))
+
+                if (_isTyping)
                 {
-                    g.FillEllipse(redBrush, x, y, badgeSize, badgeSize);
+                    // Draw pulsing border ring around icon
+                    int pulseAlpha = (int)(128 + 127 * Math.Sin(DateTime.Now.Millisecond / 100.0));
+                    using var pen = new Pen(Color.FromArgb(pulseAlpha, 0, 120, 215), Math.Max(4, bmp.Width / 16));
+                    g.DrawEllipse(pen, pen.Width / 2, pen.Width / 2, bmp.Width - pen.Width, bmp.Height - pen.Width);
+
+                    // Show progress if typing > 3s or total length is known
+                    if ((DateTime.Now - _typingStartTime).TotalSeconds >= 3 || _typingTotal > 0)
+                    {
+                        string statusText = _typingTotal > 0 ? $"{(_typingCurrent * 100) / _typingTotal}%" : "Typing...";
+                        using var font = new Font(FontFamily.GenericSansSerif, Math.Max(8, bmp.Width / 10), FontStyle.Bold);
+                        var textSize = g.MeasureString(statusText, font);
+                        float rectX = (bmp.Width - textSize.Width - 8) / 2;
+                        float rectY = bmp.Height - textSize.Height - 6;
+                        using var bgBrush = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
+                        g.FillRectangle(bgBrush, rectX, rectY, textSize.Width + 8, textSize.Height + 4);
+                        using var textBrush = new SolidBrush(Color.White);
+                        g.DrawString(statusText, font, textBrush, rectX + 4, rectY + 2);
+                    }
+                }
+                else if (_isTypingCompleted)
+                {
+                    // Draw green checkmark badge in center
+                    int badgeSize = bmp.Width / 2;
+                    int badgeX = (bmp.Width - badgeSize) / 2;
+                    int badgeY = (bmp.Height - badgeSize) / 2;
+                    using var greenBrush = new SolidBrush(Color.FromArgb(220, 40, 167, 69));
+                    g.FillEllipse(greenBrush, badgeX, badgeY, badgeSize, badgeSize);
+
+                    using var font = new Font(FontFamily.GenericSansSerif, badgeSize / 2, FontStyle.Bold);
+                    using var whiteBrush = new SolidBrush(Color.White);
+                    var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                    g.DrawString("✓", font, whiteBrush, new RectangleF(badgeX, badgeY, badgeSize, badgeSize), sf);
                 }
             }
 
