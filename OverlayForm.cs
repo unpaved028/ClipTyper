@@ -901,12 +901,14 @@ namespace ClipTyper
         // WM_MOUSEACTIVATE constants
         private const int WM_MOUSEACTIVATE = 0x0021;
         private const int MA_NOACTIVATE = 0x0003;
+        private const int WM_CLOSE = 0x0010;
+        private const int WM_QUERYENDSESSION = 0x0011;
+        private const int WM_ENDSESSION = 0x0016;
 
         /// <summary>
         /// Intercepts WM_MOUSEACTIVATE to return MA_NOACTIVATE, which
         /// tells Windows not to activate this window when it is clicked.
-        /// This is an additional safety layer on top of WS_EX_NOACTIVATE
-        /// to ensure focus is never stolen from the target application.
+        /// Also handles close messages from Windows / Installer to exit cleanly.
         /// </summary>
         protected override void WndProc(ref Message m)
         {
@@ -914,6 +916,10 @@ namespace ClipTyper
             {
                 m.Result = (IntPtr)MA_NOACTIVATE;
                 return;
+            }
+            else if (m.Msg == WM_CLOSE || m.Msg == WM_QUERYENDSESSION || m.Msg == WM_ENDSESSION)
+            {
+                Application.Exit();
             }
             base.WndProc(ref m);
         }

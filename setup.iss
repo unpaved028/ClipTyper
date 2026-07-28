@@ -1,5 +1,5 @@
 #define MyAppName "ClipTyper"
-#define MyAppVersion "1.5.0"
+#define MyAppVersion "1.5.1"
 #define MyAppPublisher "unpaved028"
 #define MyAppExeName "ClipTyper.exe"
 
@@ -22,6 +22,10 @@ SolidCompression=yes
 PrivilegesRequired=lowest
 DisableWelcomePage=yes
 DisableDirPage=yes
+; Mutex check to detect running ClipTyper process & close applications automatically
+AppMutex=Local\ClipTyper_SingleInstance_Mutex,ClipTyper_SingleInstance_Mutex
+CloseApplications=yes
+CloseApplicationsTimeout=5
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -52,4 +56,13 @@ end;
 function IsNotSilent: Boolean;
 begin
   Result := not WizardSilent;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  // Force terminate any remaining ClipTyper process before installation to avoid locked file errors
+  Exec('taskkill.exe', '/f /im ClipTyper.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
 end;

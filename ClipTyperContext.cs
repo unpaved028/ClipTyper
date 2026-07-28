@@ -25,6 +25,11 @@ namespace ClipTyper
         {
             public event Action? HotkeyPressed;
             public event Action? OverlayToggleHotkeyPressed;
+            public event Action? CloseRequested;
+
+            private const int WM_CLOSE = 0x0010;
+            private const int WM_QUERYENDSESSION = 0x0011;
+            private const int WM_ENDSESSION = 0x0016;
 
             public HotkeyForm()
             {
@@ -46,6 +51,10 @@ namespace ClipTyper
                     {
                         OverlayToggleHotkeyPressed?.Invoke();
                     }
+                }
+                else if (m.Msg == WM_CLOSE || m.Msg == WM_QUERYENDSESSION || m.Msg == WM_ENDSESSION)
+                {
+                    CloseRequested?.Invoke();
                 }
                 base.WndProc(ref m);
             }
@@ -96,6 +105,7 @@ namespace ClipTyper
             _hiddenForm = new HotkeyForm();
             _hiddenForm.HotkeyPressed += OnHotkeyPressed;
             _hiddenForm.OverlayToggleHotkeyPressed += OnOverlayToggleHotkeyPressed;
+            _hiddenForm.CloseRequested += () => OnExit(this, EventArgs.Empty);
 
             var handle = _hiddenForm.Handle;
 

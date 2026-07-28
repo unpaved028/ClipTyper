@@ -128,12 +128,15 @@ New-Item -Path ./publish-slim/portable.marker -ItemType File
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o ./publish-winget
 
 # 4. Compile Installer (requires Inno Setup installed)
-iscc /DMyAppVersion=1.5.0 setup.iss
+iscc /DMyAppVersion=1.5.1 setup.iss
 ```
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building.
 
 ## Changelog
+
+### v1.5.1
+- 🛠️ **Installer App Shutdown Fix**: Fixed issue where the Inno Setup installer hung at "Closing Applications..." when ClipTyper was running. Added graceful Windows message shutdown handling (`WM_CLOSE`, `WM_QUERYENDSESSION`, `WM_ENDSESSION`), Inno Setup `AppMutex` registration, and a process termination failsafe during installation.
 
 ### v1.5.0
 - 🛡️ **Emergency Abort & Focus Safety**: Immediate cancellation of typing when pressing `Escape` or when focus switches to another window.
