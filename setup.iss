@@ -25,7 +25,6 @@ DisableDirPage=yes
 ; Mutex check to detect running ClipTyper process & close applications automatically
 AppMutex=Local\ClipTyper_SingleInstance_Mutex,ClipTyper_SingleInstance_Mutex
 CloseApplications=yes
-CloseApplicationsTimeout=5
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
