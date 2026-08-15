@@ -6,6 +6,23 @@ using System.Text.Json.Serialization;
 
 namespace ClipTyper
 {
+    public enum NewlineMode
+    {
+        Enter = 0,
+        ShiftEnter = 1,
+        Space = 2,
+        Ignore = 3
+    }
+
+    public enum CredentialMode
+    {
+        Off = 0,
+        AutoDetect = 1,
+        TabOnly = 2,
+        EnterOnly = 3,
+        Custom = 4
+    }
+
     /// <summary>
     /// Application settings persisted to settings.json.
     /// Location depends on deployment mode:
@@ -28,6 +45,21 @@ namespace ClipTyper
         public int MaxTextLengthThreshold { get; set; } = 5000; // 0 = disabled
         public bool EnableVkCompatibilityMode { get; set; } = false;
         public bool SoundFeedbackEnabled { get; set; } = false;
+
+        // Newline & Formatting (v1.6.0)
+        public NewlineMode NewlineHandling { get; set; } = NewlineMode.Enter;
+        public bool EnforcePlainText { get; set; } = false;
+
+        // Credential Auto-Type (v1.6.0)
+        public CredentialMode CredentialAutoTypeMode { get; set; } = CredentialMode.Off;
+        public string CredentialCustomDelimiter { get; set; } = "";
+        public int CredentialStageDelayMs { get; set; } = 200;
+        public bool CredentialAutoClearClipboard { get; set; } = false;
+        public int CredentialAutoClearDelaySeconds { get; set; } = 5;
+
+        // Humanized Typing Jitter (v1.6.0)
+        public bool EnableTypingJitter { get; set; } = false;
+        public int TypingJitterRangeMs { get; set; } = 5;
 
         // Hotkey  (defaults: Ctrl+Shift = 0x0006, T = 0x54)
         public int HotkeyModifiers { get; set; } = 0x0006;

@@ -1,5 +1,5 @@
 #define MyAppName "ClipTyper"
-#define MyAppVersion "1.5.1"
+#define MyAppVersion "1.6.0"
 #define MyAppPublisher "unpaved028"
 #define MyAppExeName "ClipTyper.exe"
 
@@ -24,7 +24,7 @@ DisableWelcomePage=yes
 DisableDirPage=yes
 ; Mutex check to detect running ClipTyper process & close applications automatically
 AppMutex=Local\ClipTyper_SingleInstance_Mutex,ClipTyper_SingleInstance_Mutex
-CloseApplications=yes
+CloseApplications=force
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -55,6 +55,19 @@ end;
 function IsNotSilent: Boolean;
 begin
   Result := not WizardSilent;
+end;
+
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  // Force terminate running ClipTyper process before AppMutex check in silent mode (e.g. Winget)
+  if WizardSilent then
+  begin
+    Exec('taskkill.exe', '/f /im ClipTyper.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Sleep(500);
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

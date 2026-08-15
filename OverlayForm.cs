@@ -67,7 +67,7 @@ namespace ClipTyper
         private IntPtr _lastForegroundWindow = IntPtr.Zero;
 
         // Callback to trigger clip-type
-        private readonly Action<bool> _triggerClipType;
+        private readonly Action _triggerClipType;
 
         // Initialization state
         private bool _isInitialized;
@@ -86,9 +86,8 @@ namespace ClipTyper
 
         /// <param name="triggerClipType">
         /// Callback to invoke when the user clicks the overlay.
-        /// The bool parameter indicates whether focus restoration is needed.
         /// </param>
-        public OverlayForm(Action<bool> triggerClipType)
+        public OverlayForm(Action triggerClipType)
         {
             _triggerClipType = triggerClipType;
             InitializeForm();
@@ -601,7 +600,7 @@ namespace ClipTyper
                     Thread.Sleep(300);
                 }
 
-                _triggerClipType(false);
+                _triggerClipType();
             });
         }
 

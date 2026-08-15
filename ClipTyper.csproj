@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>media\ClipTyper_256.ico</ApplicationIcon>
-    <Version>1.5.1</Version>
+    <Version>1.6.0</Version>
   </PropertyGroup>
 
   <!-- Release build optimizations: partial trimming + compression.
@@ -26,6 +26,12 @@
   <ItemGroup>
     <EmbeddedResource Include="media\ClipTyper_256.ico" LogicalName="ClipTyper.icon_app.ico" />
     <EmbeddedResource Include="media\ClipTyper_128.ico" LogicalName="ClipTyper.icon_overlay.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="ClipTyper.Tests\**" />
+    <EmbeddedResource Remove="ClipTyper.Tests\**" />
+    <None Remove="ClipTyper.Tests\**" />
   </ItemGroup>
 
 </Project>

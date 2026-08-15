@@ -111,6 +111,16 @@ namespace ClipTyper
         }
 
         /// <summary>
+        /// Sends a standalone virtual key press (e.g. Tab, Enter, or Shift+Enter).
+        /// </summary>
+        public static void SendVirtualKey(ushort vk, bool shift = false)
+        {
+            if (shift) SendModifierDown(VK_SHIFT);
+            SendKeyPress(vk, isVirtualKey: true);
+            if (shift) SendModifierUp(VK_SHIFT);
+        }
+
+        /// <summary>
         /// Simulates typing text into the target window.
         /// Performs focus checks, Escape emergency abort detection, and optional VK compatibility mode.
         /// </summary>
@@ -120,6 +130,9 @@ namespace ClipTyper
             IntPtr targetHWnd = default,
             bool enableVkMode = false,
             bool sanitize = true,
+            NewlineMode newlineMode = NewlineMode.Enter,
+            bool enableJitter = false,
+            int jitterRangeMs = 5,
             Action<int, int>? onProgress = null,
             Func<bool>? isCancelRequested = null)
         {
@@ -153,12 +166,26 @@ namespace ClipTyper
 
                 char c = text[i];
 
-                // Skip carriage returns — newlines handled via '\n' -> VK_RETURN
+                // Skip carriage returns — newlines handled via '\n'
                 if (c == '\r') continue;
 
                 if (c == '\n')
                 {
-                    SendKeyPress(0x0D, isVirtualKey: true); // VK_RETURN
+                    switch (newlineMode)
+                    {
+                        case NewlineMode.Enter:
+                            SendKeyPress(0x0D, isVirtualKey: true); // VK_RETURN
+                            break;
+                        case NewlineMode.ShiftEnter:
+                            SendVirtualKey(0x0D, shift: true); // Shift + Enter
+                            break;
+                        case NewlineMode.Space:
+                            SendKeyPress(' ', isVirtualKey: false); // Replace with space
+                            break;
+                        case NewlineMode.Ignore:
+                            // Skip newline entirely
+                            break;
+                    }
                 }
                 else if (enableVkMode)
                 {
@@ -173,7 +200,13 @@ namespace ClipTyper
 
                 if (delayMs > 0)
                 {
-                    Thread.Sleep(delayMs);
+                    int actualDelay = delayMs;
+                    if (enableJitter && jitterRangeMs > 0)
+                    {
+                        actualDelay += Random.Shared.Next(-jitterRangeMs, jitterRangeMs + 1);
+                        actualDelay = Math.Max(1, actualDelay);
+                    }
+                    Thread.Sleep(actualDelay);
                 }
             }
 

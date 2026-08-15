@@ -24,6 +24,10 @@ winget install unpaved028.ClipTyper
 ## Features
 
 - 🎯 **Paste anywhere** — works in RDP sessions, KVM consoles, web terminals, and password fields that block clipboard paste
+- 🔑 **Credential Auto-Type** — two-stage typing for username and password with delimiter detection (Tab / Newline / Custom) and transition keys
+- ↩️ **Flexible Newline Handling** — customizable behavior for newlines (`Enter`, `Shift + Enter` for chat apps, replace with space, or ignore)
+- 📄 **Plain-Text Enforcement** — option to automatically strip Rich Text / HTML formatting before typing
+- 🎲 **Humanized Typing Jitter** — optional random typing variance (±5ms) to simulate natural keystrokes
 - 📦 **Fully portable** — single `.exe`, no installation needed
 - 🔒 **No admin rights** — runs entirely in user-space
 - ⌨️ **Hardware-level input** — uses `SendInput` with Unicode characters or optional VK keycode mapping
@@ -67,6 +71,12 @@ Right-click the tray icon → **Settings** to configure:
 |---|---|---|
 | **Trigger Hotkey** | The keyboard shortcut to trigger typing. Validates if the hotkey is in use. | `Ctrl + Shift + T` |
 | **Keystroke Delay** | Delay between each simulated keystroke (5–100ms). Increase for slow/remote targets. | 25ms |
+| **Newline Handling** | How newlines are sent: `Enter`, `Shift + Enter` (Chats), `Space`, or `Ignore`. | `Enter (Default)` |
+| **Enforce Plain-Text** | Automatically strip Rich Text / HTML formatting before typing. | Disabled |
+| **Typing Jitter** | Adds random ±5ms variance between keystrokes to simulate natural typing. | Disabled |
+| **Credential Auto-Type** | Two-stage login: Auto-detects delimiters (Tab/Newline/Custom) to type user and password. | Disabled |
+| **Stage Pause** | Delay (50–2000ms) between username and password during credential auto-typing. | 200ms |
+| **Auto-Clear Clipboard** | Automatically erases clipboard contents a few seconds after typing credentials. | Disabled |
 | **Clean Text** | Removes invisible control chars, BOM, null-bytes, zero-width spaces before typing. | Enabled |
 | **Confirm Before Long Text** | Shows duration estimate confirmation dialog before typing long clipboard text. | Enabled (> 5,000 chars) |
 | **VK Compatibility Mode** | Translates characters to physical virtual keycodes for MS Teams control share / RDP. | Disabled |
@@ -97,9 +107,9 @@ Before typing begins, all modifier keys (Ctrl, Shift, Alt) are programmatically 
 
 When triggered via the overlay button, ClipTyper:
 1. Continuously tracks the last active window (that isn't ClipTyper)
-2. Waits 500ms after the click
+2. Waits 150ms after the click
 3. Restores focus to that window using `SetForegroundWindow`
-4. Waits another 500ms for the target to process the focus change
+4. Waits another 300ms for the target to process the focus change
 5. Reads the clipboard and begins typing
 
 ## System Requirements
@@ -128,12 +138,20 @@ New-Item -Path ./publish-slim/portable.marker -ItemType File
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o ./publish-winget
 
 # 4. Compile Installer (requires Inno Setup installed)
-iscc /DMyAppVersion=1.5.1 setup.iss
+iscc /DMyAppVersion=1.6.0 setup.iss
 ```
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building.
 
 ## Changelog
+
+### v1.6.0
+- 🔑 **Credential Auto-Type**: Automatic two-stage typing for username and password. Detects Tab, Newline, or custom delimiters in copied text, types the username, presses Tab/Enter, pauses briefly, and safely types the password.
+- 🔒 **Credential Security**: Passwords are never logged. Typing stops immediately if the target window loses focus before typing the password. Optional automatic clipboard clearing after login.
+- ↩️ **Configurable Newlines**: Choose how line breaks are processed (`Enter`, `Shift + Enter` for MS Teams & chat apps, replace with space, or ignore).
+- 📄 **Plain-Text Mode**: Strips Rich Text and HTML formatting from copied text before typing.
+- 🎲 **Humanized Typing Jitter**: Adds subtle random variance to typing intervals to simulate natural keyboard input.
+- 🛡️ **Core Refactoring & Stability**: Isolated background `TypingService` preventing parallel typing collision, thread-safe UI prompts, and memory leak fixes.
 
 ### v1.5.1
 - 🛠️ **Installer App Shutdown Fix**: Fixed issue where the Inno Setup installer hung at "Closing Applications..." when ClipTyper was running. Added graceful Windows message shutdown handling (`WM_CLOSE`, `WM_QUERYENDSESSION`, `WM_ENDSESSION`), Inno Setup `AppMutex` registration, and a process termination failsafe during installation.

@@ -17,6 +17,7 @@ namespace ClipTyper
         private OverlayForm? _overlay;
         private Icon? _badgedTrayIcon;
         private UpdateChecker.UpdateCheckResult? _cachedUpdateResult;
+        private TypingService _typingService;
         private const int HotkeyId = 1;
         private const int OverlayToggleHotkeyId = 2;
 
@@ -88,6 +89,16 @@ namespace ClipTyper
             // Load persisted settings
             SettingsManager.Load();
             var settings = SettingsManager.Current;
+
+            _typingService = new TypingService(SynchronizationContext.Current);
+            _typingService.ProgressChanged += (isTyping, current, total) =>
+            {
+                _overlay?.SetTypingState(isTyping, current, total);
+            };
+            _typingService.TypingCompleted += (completed) =>
+            {
+                _overlay?.SetTypingState(false, completed: completed);
+            };
 
             _trayIcon = new NotifyIcon()
             {
@@ -234,6 +245,9 @@ namespace ClipTyper
                 _trayIcon.Icon = newIcon;
                 _badgedTrayIcon?.Dispose();
                 _badgedTrayIcon = newIcon;
+
+                // TD-08: Free native Win32 icon handle created by GetHicon() to prevent GDI leak
+                NativeMethods.DestroyIcon(hIcon);
             }
             catch
             {
@@ -241,141 +255,11 @@ namespace ClipTyper
             }
         }
 
-        // ── Shared Clip-Type Trigger ────────────────────────────────
-
-        /// <summary>
-        /// Core clip-type logic shared by both the hotkey and the overlay.
-        /// Reads the clipboard and types its text content via SendInput.
-        /// </summary>
-        /// <param name="restoreFocus">
-        /// When true, focus has already been restored by the caller (overlay).
-        /// When false, the hotkey was used and focus is already on the target.
-        /// </param>
-        private void TriggerClipType(bool restoreFocus)
-        {
-            IntPtr targetHWnd = NativeMethods.GetForegroundWindow();
-
-            // 1. UIPI Check: Target window elevated?
-            if (NativeMethods.IsTargetWindowElevated(targetHWnd))
-            {
-                Logger.LogWarning("Target window is elevated (Admin). Input blocked by UIPI.");
-                MessageBox.Show(
-                    "The target window is running with Administrator privileges.\n\nClipTyper is currently running without Administrator privileges. Windows is blocking keyboard input to this window.\n\nPlease launch ClipTyper as Administrator as well.",
-                    "ClipTyper - Administrator Privileges Required",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
-            }
-
-            string textToType = "";
-            try
-            {
-                if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
-                {
-                    if (Clipboard.ContainsText())
-                    {
-                        textToType = Clipboard.GetText();
-                    }
-                }
-                else
-                {
-                    var thread = new Thread(() =>
-                    {
-                        if (Clipboard.ContainsText())
-                        {
-                            textToType = Clipboard.GetText();
-                        }
-                    });
-                    thread.SetApartmentState(ApartmentState.STA);
-                    thread.Start();
-                    thread.Join(2000);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Clipboard error", ex);
-            }
-
-            if (string.IsNullOrEmpty(textToType))
-            {
-                return;
-            }
-
-            var settings = SettingsManager.Current;
-
-            // 2. Max Text Length Check & Confirmation
-            if (settings.MaxTextLengthThreshold > 0 && textToType.Length > settings.MaxTextLengthThreshold)
-            {
-                double estSeconds = (textToType.Length * (settings.KeystrokeDelayMs + 5)) / 1000.0;
-                string timeStr = estSeconds >= 60 ? $"{estSeconds / 60:F1} minutes" : $"{estSeconds:F0} seconds";
-
-                var res = MessageBox.Show(
-                    $"The clipboard text contains {textToType.Length:N0} characters.\n\nTyping will take approximately {timeStr}.\n\nDo you want to proceed with typing?",
-                    "ClipTyper - Large Text",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question);
-
-                if (res != DialogResult.Yes)
-                {
-                    Logger.LogInfo("Large text typing cancelled by user.");
-                    return;
-                }
-
-                // Restore focus to target window after user confirmed the dialog
-                NativeMethods.ForceForegroundWindow(targetHWnd);
-                Thread.Sleep(200);
-            }
-
-            // 3. Visual Feedback & Typing Simulation
-            _overlay?.SetTypingState(true, 0, textToType.Length);
-
-            TypeResult result = KeyboardSimulator.SendText(
-                textToType,
-                delayMs: settings.KeystrokeDelayMs,
-                targetHWnd: targetHWnd,
-                enableVkMode: settings.EnableVkCompatibilityMode,
-                sanitize: settings.SanitizeInput,
-                onProgress: (current, total) =>
-                {
-                    _overlay?.SetTypingState(true, current, total);
-                }
-            );
-
-            _overlay?.SetTypingState(false, completed: (result == TypeResult.Completed));
-
-            // 4. Handle Result
-            if (result == TypeResult.Completed)
-            {
-                if (settings.SoundFeedbackEnabled)
-                {
-                    try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
-                }
-                Logger.LogInfo($"Successfully typed {textToType.Length} characters.");
-            }
-            else if (result == TypeResult.FocusLost)
-            {
-                Logger.LogWarning("Typing process cancelled due to focus loss.");
-                MessageBox.Show(
-                    "Typing was cancelled because the active window changed.\n\nPlease refocus the target window and try again.",
-                    "ClipTyper - Typing Cancelled",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-            }
-            else if (result == TypeResult.AbortedByEscape)
-            {
-                Logger.LogInfo("Typing cancelled by pressing Escape.");
-            }
-        }
-
         // ── Hotkey Handler ──────────────────────────────────────────
 
         private void OnHotkeyPressed()
         {
-            Task.Run(() =>
-            {
-                Thread.Sleep(100);
-                TriggerClipType(restoreFocus: false);
-            });
+            _ = _typingService.TriggerClipTypeAsync();
         }
 
         private void OnOverlayToggleHotkeyPressed()
@@ -406,9 +290,9 @@ namespace ClipTyper
         {
             if (_overlay != null) return;
 
-            _overlay = new OverlayForm((restoreFocus) =>
+            _overlay = new OverlayForm(() =>
             {
-                TriggerClipType(restoreFocus);
+                _ = _typingService.TriggerClipTypeAsync();
             });
 
             _overlay.OverlayHidden += () =>
@@ -451,7 +335,7 @@ namespace ClipTyper
             };
             form.LiveScaleChanged += liveScaleHandler;
 
-            form.SettingsSaved += (modifiers, key, delay, overlayEnabled, overlayScale, overlayMonitor, resetPosition, autoStart, toggleMods, toggleKey, toggleEnabled, autoUpdateCheckEnabled, sanitize, maxLen, vkMode, sound) =>
+            form.SettingsSaved += (updatedSettings, modifiers, key, toggleMods, toggleKey, toggleEnabled, resetPosition) =>
             {
                 // Try to update the trigger hotkey
                 if (modifiers != _hotkey.CurrentModifier || key != _hotkey.CurrentKey)
@@ -495,40 +379,56 @@ namespace ClipTyper
                     _overlayToggleHotkey = null;
                 }
 
-                // Save all settings
-                var s = SettingsManager.Current;
-                s.HotkeyModifiers = (int)modifiers;
-                s.HotkeyKey = (int)key;
-                s.KeystrokeDelayMs = delay;
-                s.OverlayEnabled = overlayEnabled;
-                s.OverlayScalePercent = overlayScale;
-                s.OverlayMonitorIndex = overlayMonitor;
-                s.AutoStartEnabled = autoStart;
-                s.OverlayToggleModifiers = (int)toggleMods;
-                s.OverlayToggleKey = (int)toggleKey;
-                s.OverlayToggleEnabled = toggleEnabled;
-                s.AutoUpdateCheckEnabled = autoUpdateCheckEnabled;
-
-                s.SanitizeInput = sanitize;
-                s.MaxTextLengthThreshold = maxLen;
-                s.EnableVkCompatibilityMode = vkMode;
-                s.SoundFeedbackEnabled = sound;
-
+                // Copy positions if not reset
                 if (resetPosition)
                 {
-                    s.OverlayX = -1;
-                    s.OverlayY = -1;
+                    updatedSettings.OverlayX = -1;
+                    updatedSettings.OverlayY = -1;
                 }
+                else
+                {
+                    updatedSettings.OverlayX = SettingsManager.Current.OverlayX;
+                    updatedSettings.OverlayY = SettingsManager.Current.OverlayY;
+                }
+
+                // Save updated settings
+                var current = SettingsManager.Current;
+                current.HotkeyModifiers = updatedSettings.HotkeyModifiers;
+                current.HotkeyKey = updatedSettings.HotkeyKey;
+                current.OverlayToggleModifiers = updatedSettings.OverlayToggleModifiers;
+                current.OverlayToggleKey = updatedSettings.OverlayToggleKey;
+                current.OverlayToggleEnabled = updatedSettings.OverlayToggleEnabled;
+                current.KeystrokeDelayMs = updatedSettings.KeystrokeDelayMs;
+                current.NewlineHandling = updatedSettings.NewlineHandling;
+                current.EnforcePlainText = updatedSettings.EnforcePlainText;
+                current.EnableTypingJitter = updatedSettings.EnableTypingJitter;
+                current.TypingJitterRangeMs = updatedSettings.TypingJitterRangeMs;
+                current.CredentialAutoTypeMode = updatedSettings.CredentialAutoTypeMode;
+                current.CredentialCustomDelimiter = updatedSettings.CredentialCustomDelimiter;
+                current.CredentialStageDelayMs = updatedSettings.CredentialStageDelayMs;
+                current.CredentialAutoClearClipboard = updatedSettings.CredentialAutoClearClipboard;
+                current.CredentialAutoClearDelaySeconds = updatedSettings.CredentialAutoClearDelaySeconds;
+                current.SanitizeInput = updatedSettings.SanitizeInput;
+                current.MaxTextLengthThreshold = updatedSettings.MaxTextLengthThreshold;
+                current.EnableVkCompatibilityMode = updatedSettings.EnableVkCompatibilityMode;
+                current.SoundFeedbackEnabled = updatedSettings.SoundFeedbackEnabled;
+                current.OverlayEnabled = updatedSettings.OverlayEnabled;
+                current.OverlayScalePercent = updatedSettings.OverlayScalePercent;
+                current.OverlayMonitorIndex = updatedSettings.OverlayMonitorIndex;
+                current.OverlayX = updatedSettings.OverlayX;
+                current.OverlayY = updatedSettings.OverlayY;
+                current.AutoStartEnabled = updatedSettings.AutoStartEnabled;
+                current.AutoUpdateCheckEnabled = updatedSettings.AutoUpdateCheckEnabled;
 
                 SettingsManager.Save();
 
                 // Apply overlay changes
-                if (overlayEnabled)
+                if (current.OverlayEnabled)
                 {
                     if (_overlay != null)
                     {
-                        _overlay.ApplyScale(overlayScale);
-                        _overlay.MoveToMonitor(overlayMonitor);
+                        _overlay.ApplyScale(current.OverlayScalePercent);
+                        _overlay.MoveToMonitor(current.OverlayMonitorIndex);
                         if (resetPosition)
                         {
                             _overlay.MoveToDefaultPosition();
@@ -554,7 +454,7 @@ namespace ClipTyper
                 // Apply autostart changes (Winget mode only)
                 if (!SettingsManager.IsPortable)
                 {
-                    InstallHelper.SetAutoStart(autoStart);
+                    InstallHelper.SetAutoStart(current.AutoStartEnabled);
                 }
             };
 

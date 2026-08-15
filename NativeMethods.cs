@@ -28,6 +28,14 @@ namespace ClipTyper
         public static extern bool SetForegroundWindow(IntPtr hWnd);
 
         /// <summary>
+        /// Destroys an icon and frees any memory the icon occupied.
+        /// Required when creating icons via GetHicon() to prevent GDI leaks.
+        /// </summary>
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool DestroyIcon(IntPtr hIcon);
+
+        /// <summary>
         /// Retrieves the identifier of the thread that created the specified
         /// window and, optionally, the process that created the window.
         /// </summary>
