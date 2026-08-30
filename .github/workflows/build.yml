@@ -38,7 +38,7 @@ jobs:
 
       # ── Portable: self-contained, settings next to EXE ─────────
       - name: Publish Portable
-        run: dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:Version=${{ env.BUILD_VERSION }} -o ./publish-portable
+        run: dotnet publish ClipTyper.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:Version=${{ env.BUILD_VERSION }} -o ./publish-portable
 
       - name: Add portable marker
         run: New-Item -Path ./publish-portable/portable.marker -ItemType File -Value "This file marks ClipTyper as running in portable mode.`nSettings are stored next to this executable."
@@ -48,7 +48,7 @@ jobs:
 
       # ── Slim: framework-dependent, settings next to EXE ────────
       - name: Publish Slim
-        run: dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:Version=${{ env.BUILD_VERSION }} -o ./publish-slim
+        run: dotnet publish ClipTyper.csproj -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true /p:Version=${{ env.BUILD_VERSION }} -o ./publish-slim
 
       - name: Add portable marker (Slim)
         run: New-Item -Path ./publish-slim/portable.marker -ItemType File -Value "This file marks ClipTyper as running in portable mode.`nSettings are stored next to this executable."
@@ -58,7 +58,7 @@ jobs:
 
       # ── Winget: self-contained, no marker (installed mode) ─────
       - name: Publish Winget
-        run: dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:Version=${{ env.BUILD_VERSION }} -o ./publish-winget
+        run: dotnet publish ClipTyper.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:Version=${{ env.BUILD_VERSION }} -o ./publish-winget
 
        # No portable.marker → installed mode (settings in %AppData%, autostart, shortcuts)
 
