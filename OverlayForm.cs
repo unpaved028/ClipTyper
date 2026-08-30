@@ -66,8 +66,12 @@ namespace ClipTyper
         private System.Windows.Forms.Timer _focusTracker = null!;
         private IntPtr _lastForegroundWindow = IntPtr.Zero;
 
-        // Callback to trigger clip-type
+        // Callbacks for clip-typing and cancellation
         private readonly Action _triggerClipType;
+        private readonly Action? _stopTyping;
+        private readonly Func<bool>? _isTypingQuery;
+        private ToolStripMenuItem? _stopTypingMenuItem;
+        private ToolStripSeparator? _stopTypingSeparator;
 
         // Initialization state
         private bool _isInitialized;
@@ -85,11 +89,19 @@ namespace ClipTyper
         // ── Constructor ─────────────────────────────────────────────
 
         /// <param name="triggerClipType">
-        /// Callback to invoke when the user clicks the overlay.
+        /// Callback to invoke when the user clicks the overlay to start typing.
         /// </param>
-        public OverlayForm(Action triggerClipType)
+        /// <param name="onStopTyping">
+        /// Optional callback to invoke when user requests typing cancellation from the overlay.
+        /// </param>
+        /// <param name="isTypingQuery">
+        /// Optional callback querying whether typing is actively running.
+        /// </param>
+        public OverlayForm(Action triggerClipType, Action? onStopTyping = null, Func<bool>? isTypingQuery = null)
         {
             _triggerClipType = triggerClipType;
+            _stopTyping = onStopTyping;
+            _isTypingQuery = isTypingQuery;
             InitializeForm();
             InitializeIcon();
             ApplyScale(SettingsManager.Current.OverlayScalePercent);
@@ -161,17 +173,13 @@ namespace ClipTyper
             }
         }
 
-        /// <summary>
-        /// Selects the best icon for the current form size to avoid scaling.
-        /// Small (64) and Medium (128) use the 128px icon.
-        /// Large (256) uses the 256px icon.
-        /// Draws a red update badge in top-right corner if _hasUpdateBadge is true.
         private bool _isTyping;
         private int _typingCurrent;
         private int _typingTotal;
         private bool _isTypingCompleted;
         private DateTime _typingStartTime;
         private System.Windows.Forms.Timer? _completedResetTimer;
+        private DateTime _lastIconUpdate = DateTime.MinValue;
 
         /// <summary>
         /// Updates the typing visual state on the overlay (pulsing border, typing progress, completion checkmark).
@@ -184,6 +192,7 @@ namespace ClipTyper
                 return;
             }
 
+            bool stateChanged = (_isTyping != isTyping) || (_isTypingCompleted != completed);
             _isTyping = isTyping;
             if (isTyping && _typingStartTime == default)
             {
@@ -213,7 +222,13 @@ namespace ClipTyper
                 _completedResetTimer.Start();
             }
 
-            UpdateIconImage();
+            // Throttle icon updates during active typing (max 20 FPS / 50ms) unless state changed or complete (TD-44)
+            var now = DateTime.UtcNow;
+            if (stateChanged || completed || current == total || (now - _lastIconUpdate).TotalMilliseconds >= 50)
+            {
+                _lastIconUpdate = now;
+                UpdateIconImage();
+            }
         }
 
         /// <summary>
@@ -301,6 +316,22 @@ namespace ClipTyper
         private void InitializeContextMenu()
         {
             _overlayMenu = new ContextMenuStrip();
+
+            // TD-75: "Stop Typing" option reachable directly from the overlay
+            _stopTypingMenuItem = new ToolStripMenuItem("⏹ Stop Typing", null, (_, _) =>
+            {
+                _stopTyping?.Invoke();
+            })
+            {
+                Font = new Font(_overlayMenu.Font, FontStyle.Bold),
+                ForeColor = Color.DarkRed,
+                Visible = false
+            };
+            _stopTypingSeparator = new ToolStripSeparator() { Visible = false };
+
+            _overlayMenu.Items.Add(_stopTypingMenuItem);
+            _overlayMenu.Items.Add(_stopTypingSeparator);
+
             _overlayMenu.Items.Add("Hide Overlay", null, (_, _) =>
             {
                 OverlayHidden?.Invoke();
@@ -313,6 +344,13 @@ namespace ClipTyper
             var scaleMenu = new ToolStripMenuItem("Scale");
             scaleMenu.DropDownOpening += (s, e) => PopulateScaleMenu(scaleMenu);
             _overlayMenu.Items.Add(scaleMenu);
+
+            _overlayMenu.Opening += (s, e) =>
+            {
+                bool isTypingActive = _isTyping || _isTypingQuery?.Invoke() == true;
+                _stopTypingMenuItem.Visible = isTypingActive;
+                _stopTypingSeparator.Visible = isTypingActive;
+            };
         }
 
         private void PopulateMonitorMenu(ToolStripMenuItem monitorMenu)
@@ -351,9 +389,9 @@ namespace ClipTyper
 
                 var item = new ToolStripMenuItem(label, null, (_, _) =>
                 {
+                    // TD-71: ApplyScale already triggers SavePosition() which saves once
                     SettingsManager.Current.OverlayScalePercent = preset;
                     ApplyScale(preset);
-                    SettingsManager.Save();
                     ScaleChanged?.Invoke(preset);
                 });
                 item.Checked = (currentScale == preset);
@@ -570,6 +608,13 @@ namespace ClipTyper
 
             if (wasClick)
             {
+                // TD-75: If active typing is in progress, clicking the overlay acts as an immediate stop button
+                if (_isTyping || _isTypingQuery?.Invoke() == true)
+                {
+                    _stopTyping?.Invoke();
+                    return;
+                }
+
                 OnOverlayClicked();
             }
         }
@@ -870,8 +915,12 @@ namespace ClipTyper
                 _focusTracker?.Dispose();
                 _peekTimer?.Stop();
                 _peekTimer?.Dispose();
+                _completedResetTimer?.Stop();
+                _completedResetTimer?.Dispose();
+                _completedResetTimer = null;
                 _overlayIcon128?.Dispose();
                 _overlayIcon256?.Dispose();
+                _stopTypingMenuItem?.Font?.Dispose();
                 _overlayMenu?.Dispose();
             }
             base.Dispose(disposing);
@@ -903,6 +952,8 @@ namespace ClipTyper
         private const int WM_CLOSE = 0x0010;
         private const int WM_QUERYENDSESSION = 0x0011;
         private const int WM_ENDSESSION = 0x0016;
+
+
 
         /// <summary>
         /// Intercepts WM_MOUSEACTIVATE to return MA_NOACTIVATE, which

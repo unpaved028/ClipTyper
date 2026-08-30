@@ -24,6 +24,7 @@ namespace ClipTyper
         // Hotkeys
         private TextBox _hotkeyBox = null!;
         private TextBox _toggleHotkeyBox = null!;
+        private CheckBox _toggleHotkeyEnableCheckbox = null!;
 
         // Typing & Speed
         private TrackBar _delaySlider = null!;
@@ -31,6 +32,7 @@ namespace ClipTyper
         private ComboBox _newlineComboBox = null!;
         private CheckBox _enforcePlainTextCheckbox = null!;
         private CheckBox _jitterCheckbox = null!;
+        private NumericUpDown _jitterRangeInput = null!;
 
         // Safety & Compatibility
         private CheckBox _sanitizeInputCheckbox = null!;
@@ -39,9 +41,10 @@ namespace ClipTyper
         private CheckBox _vkModeCheckbox = null!;
         private CheckBox _soundFeedbackCheckbox = null!;
 
-        // Credential Auto-Type (v1.6.0)
+        // Credential Auto-Type (v1.6.0 / v1.6.1)
         private ComboBox _credModeComboBox = null!;
         private TextBox _customDelimiterBox = null!;
+        private ComboBox _customTransitionComboBox = null!;
         private NumericUpDown _stageDelayInput = null!;
         private CheckBox _autoClearCheckbox = null!;
         private NumericUpDown _autoClearDelayInput = null!;
@@ -57,6 +60,7 @@ namespace ClipTyper
         // System / Startup
         private CheckBox? _autostartCheckbox;
         private CheckBox _autoUpdateCheckbox = null!;
+        private CheckBox _loggingCheckbox = null!;
 
         // Actions
         private Button _saveBtn = null!;
@@ -88,9 +92,9 @@ namespace ClipTyper
         };
 
         /// <summary>
-        /// Raised when the user saves settings. Passes modified settings instance and resetPosition flag.
+        /// Raised when the user saves settings. Passes modified settings instance and resetPosition flag (TD-39).
         /// </summary>
-        public event Action<AppSettings, GlobalHotkey.Modifiers, Keys, GlobalHotkey.Modifiers, Keys, bool, bool>? SettingsSaved;
+        public event Action<AppSettings, bool>? SettingsSaved;
 
         /// <summary>
         /// Raised in real-time when the user moves the scale slider.
@@ -122,7 +126,7 @@ namespace ClipTyper
             {
                 Text = "Hotkeys",
                 Location = new Point(12, y),
-                Size = new Size(groupWidth, 110)
+                Size = new Size(groupWidth, 135)
             };
 
             var hotkeyLabel = new Label { Text = "Type Clipboard:", Location = new Point(12, 25), AutoSize = true };
@@ -133,11 +137,18 @@ namespace ClipTyper
             _toggleHotkeyBox = new TextBox { Location = new Point(170, 52), Size = new Size(210, 23), ReadOnly = true, BackColor = SystemColors.Window };
             _toggleHotkeyBox.GotFocus += (_, _) => StartRecording(RecordingTarget.ToggleHotkey, _toggleHotkeyBox);
 
-            var hotkeyHint = new Label { Text = "Click a box and press keys to record.", Location = new Point(12, 83), ForeColor = Color.Gray, AutoSize = true };
+            _toggleHotkeyEnableCheckbox = new CheckBox
+            {
+                Text = "Enable overlay toggle hotkey",
+                Location = new Point(12, 80),
+                AutoSize = true
+            };
 
-            hotkeyGroup.Controls.AddRange(new Control[] { hotkeyLabel, _hotkeyBox, toggleHotkeyLabel, _toggleHotkeyBox, hotkeyHint });
+            var hotkeyHint = new Label { Text = "Click a box and press keys to record.", Location = new Point(12, 106), ForeColor = Color.Gray, AutoSize = true };
+
+            hotkeyGroup.Controls.AddRange(new Control[] { hotkeyLabel, _hotkeyBox, toggleHotkeyLabel, _toggleHotkeyBox, _toggleHotkeyEnableCheckbox, hotkeyHint });
             Controls.Add(hotkeyGroup);
-            y += 120;
+            y += 145;
 
             // ── 2. Typing & Formatting Group ────────────────────────
             var typingGroup = new GroupBox
@@ -164,19 +175,40 @@ namespace ClipTyper
 
             _enforcePlainTextCheckbox = new CheckBox
             {
-                Text = "Enforce Plain-Text (strip RTF & HTML formatting)",
+                Text = "Plain-Text Mode (prefer Unicode plain-text format)",
                 Location = new Point(12, 98),
                 Size = new Size(370, 20)
             };
 
             _jitterCheckbox = new CheckBox
             {
-                Text = "Humanized typing jitter (±5 ms random variance)",
+                Text = "Humanized jitter:",
                 Location = new Point(12, 126),
-                Size = new Size(370, 20)
+                AutoSize = true
+            };
+            _jitterRangeInput = new NumericUpDown
+            {
+                Location = new Point(135, 124),
+                Size = new Size(50, 23),
+                Minimum = 1,
+                Maximum = 50,
+                Value = 5,
+                Enabled = false
+            };
+            var jitterMsLabel = new Label { Text = "± ms variance", Location = new Point(190, 126), AutoSize = true };
+
+            _jitterCheckbox.CheckedChanged += (_, _) =>
+            {
+                _jitterRangeInput.Enabled = _jitterCheckbox.Checked;
             };
 
-            typingGroup.Controls.AddRange(new Control[] { delayCaption, _delaySlider, _delayLabel, newlineLabel, _newlineComboBox, _enforcePlainTextCheckbox, _jitterCheckbox });
+            typingGroup.Controls.AddRange(new Control[]
+            {
+                delayCaption, _delaySlider, _delayLabel,
+                newlineLabel, _newlineComboBox,
+                _enforcePlainTextCheckbox,
+                _jitterCheckbox, _jitterRangeInput, jitterMsLabel
+            });
             Controls.Add(typingGroup);
             y += 170;
 
@@ -199,8 +231,10 @@ namespace ClipTyper
                 "Custom Delimiter"
             });
 
-            var customDelimLabel = new Label { Text = "Custom Delimiter:", Location = new Point(12, 58), AutoSize = true };
-            _customDelimiterBox = new TextBox { Location = new Point(135, 55), Size = new Size(120, 23), Enabled = false };
+            var customDelimLabel = new Label { Text = "Custom Delim / Key:", Location = new Point(12, 58), AutoSize = true };
+            _customDelimiterBox = new TextBox { Location = new Point(135, 55), Size = new Size(115, 23), Enabled = false };
+            _customTransitionComboBox = new ComboBox { Location = new Point(255, 55), Size = new Size(125, 23), DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
+            _customTransitionComboBox.Items.AddRange(new object[] { "Send Tab", "Send Enter" });
 
             var stageDelayLabel = new Label { Text = "Stage Pause:", Location = new Point(12, 90), AutoSize = true };
             _stageDelayInput = new NumericUpDown { Location = new Point(135, 88), Size = new Size(70, 23), Minimum = 50, Maximum = 2000, Value = 200, Increment = 50 };
@@ -226,7 +260,9 @@ namespace ClipTyper
 
             _credModeComboBox.SelectedIndexChanged += (_, _) =>
             {
-                _customDelimiterBox.Enabled = (_credModeComboBox.SelectedIndex == 4);
+                bool isCustom = (_credModeComboBox.SelectedIndex == 4);
+                _customDelimiterBox.Enabled = isCustom;
+                _customTransitionComboBox.Enabled = isCustom;
             };
 
             _autoClearCheckbox.CheckedChanged += (_, _) =>
@@ -238,7 +274,7 @@ namespace ClipTyper
             credGroup.Controls.AddRange(new Control[]
             {
                 credModeLabel, _credModeComboBox,
-                customDelimLabel, _customDelimiterBox,
+                customDelimLabel, _customDelimiterBox, _customTransitionComboBox,
                 stageDelayLabel, _stageDelayInput, msLabel,
                 _autoClearCheckbox, _autoClearDelayInput, secLabel,
                 _autoClearWarningLabel
@@ -249,9 +285,9 @@ namespace ClipTyper
             // ── 4. Safety & Compatibility Group ─────────────────────
             var safetyGroup = new GroupBox
             {
-                Text = "Safety & Target Compatibility",
+                Text = "Safety & Diagnostics",
                 Location = new Point(12, y),
-                Size = new Size(groupWidth, 140)
+                Size = new Size(groupWidth, 168)
             };
 
             _sanitizeInputCheckbox = new CheckBox
@@ -292,15 +328,24 @@ namespace ClipTyper
                 Size = new Size(375, 20)
             };
 
+            _loggingCheckbox = new CheckBox
+            {
+                Text = "Enable diagnostic logging (clip-typer.log)",
+                Location = new Point(12, 138),
+                Size = new Size(375, 20),
+                Checked = true
+            };
+
             safetyGroup.Controls.AddRange(new Control[]
             {
                 _sanitizeInputCheckbox,
                 _maxLenEnableCheckbox, _maxLenInput, maxLenCharsLabel,
                 _vkModeCheckbox,
-                _soundFeedbackCheckbox
+                _soundFeedbackCheckbox,
+                _loggingCheckbox
             });
             Controls.Add(safetyGroup);
-            y += 150;
+            y += 178;
 
             // ── 5. Overlay Group ────────────────────────────────────
             var overlayGroup = new GroupBox
@@ -381,7 +426,7 @@ namespace ClipTyper
             y += 60;
 
             // ── Buttons ─────────────────────────────────────────────
-            _saveBtn = new Button { Text = "Save", Location = new Point(230, y), Size = new Size(85, 28), DialogResult = DialogResult.OK };
+            _saveBtn = new Button { Text = "Save", Location = new Point(230, y), Size = new Size(85, 28) };
             _saveBtn.Click += OnSave;
 
             _cancelBtn = new Button { Text = "Cancel", Location = new Point(325, y), Size = new Size(85, 28), DialogResult = DialogResult.Cancel };
@@ -412,6 +457,7 @@ namespace ClipTyper
             _recordedToggleModifiers = (GlobalHotkey.Modifiers)s.OverlayToggleModifiers;
             _recordedToggleKey = (Keys)s.OverlayToggleKey;
             _toggleHotkeyBox.Text = FormatHotkey(_recordedToggleModifiers, _recordedToggleKey);
+            _toggleHotkeyEnableCheckbox.Checked = s.OverlayToggleEnabled;
 
             // Keystroke delay & formatting
             _delaySlider.Value = Math.Clamp(s.KeystrokeDelayMs, 5, 100);
@@ -419,11 +465,17 @@ namespace ClipTyper
             _newlineComboBox.SelectedIndex = Math.Clamp((int)s.NewlineHandling, 0, 3);
             _enforcePlainTextCheckbox.Checked = s.EnforcePlainText;
             _jitterCheckbox.Checked = s.EnableTypingJitter;
+            _jitterRangeInput.Value = Math.Clamp(s.TypingJitterRangeMs, 1, 50);
+            _jitterRangeInput.Enabled = s.EnableTypingJitter;
 
             // Credential Auto-Type
             _credModeComboBox.SelectedIndex = Math.Clamp((int)s.CredentialAutoTypeMode, 0, 4);
             _customDelimiterBox.Text = s.CredentialCustomDelimiter;
-            _customDelimiterBox.Enabled = (s.CredentialAutoTypeMode == CredentialMode.Custom);
+            bool isCustom = (s.CredentialAutoTypeMode == CredentialMode.Custom);
+            _customDelimiterBox.Enabled = isCustom;
+            _customTransitionComboBox.SelectedIndex = (s.CredentialCustomTransitionKey == 0x0D) ? 1 : 0;
+            _customTransitionComboBox.Enabled = isCustom;
+
             _stageDelayInput.Value = Math.Clamp(s.CredentialStageDelayMs, 50, 2000);
             _autoClearCheckbox.Checked = s.CredentialAutoClearClipboard;
             _autoClearDelayInput.Value = Math.Clamp(s.CredentialAutoClearDelaySeconds, 1, 60);
@@ -447,28 +499,23 @@ namespace ClipTyper
 
             _vkModeCheckbox.Checked = s.EnableVkCompatibilityMode;
             _soundFeedbackCheckbox.Checked = s.SoundFeedbackEnabled;
+            _loggingCheckbox.Checked = s.EnableDiagnosticLogging;
 
-            // Overlay Checkbox & Scale
+            // Overlay
             _overlayCheckbox.Checked = s.OverlayEnabled;
             _scaleSlider.Value = Math.Clamp(s.OverlayScalePercent, 25, 200);
             _scaleLabel.Text = $"{_scaleSlider.Value}%";
-
-            // Monitor selection
-            int monitorIndex = s.OverlayMonitorIndex;
-            if (monitorIndex >= 0 && monitorIndex < _monitorComboBox.Items.Count)
+            int monIdx = Math.Clamp(s.OverlayMonitorIndex, 0, Screen.AllScreens.Length - 1);
+            if (_monitorComboBox.Items.Count > monIdx)
             {
-                _monitorComboBox.SelectedIndex = monitorIndex;
-            }
-            else if (_monitorComboBox.Items.Count > 0)
-            {
-                _monitorComboBox.SelectedIndex = 0;
+                _monitorComboBox.SelectedIndex = monIdx;
             }
 
+            // Startup & Updates
             if (_autostartCheckbox != null)
             {
-                _autostartCheckbox.Checked = InstallHelper.IsAutoStartEnabled();
+                _autostartCheckbox.Checked = s.AutoStartEnabled;
             }
-
             _autoUpdateCheckbox.Checked = s.AutoUpdateCheckEnabled;
         }
 
@@ -479,25 +526,45 @@ namespace ClipTyper
                 return base.ProcessCmdKey(ref msg, keyData);
             }
 
-            Keys baseKey = keyData & Keys.KeyCode;
+            TextBox targetBox = _recordingTarget == RecordingTarget.TriggerHotkey ? _hotkeyBox : _toggleHotkeyBox;
 
-            if (baseKey == Keys.ControlKey || baseKey == Keys.ShiftKey ||
-                baseKey == Keys.Menu || baseKey == Keys.LWin ||
-                baseKey == Keys.RWin)
+            // Handle Escape to cancel recording
+            if ((keyData & Keys.KeyCode) == Keys.Escape)
+            {
+                if (_recordingTarget == RecordingTarget.TriggerHotkey)
+                {
+                    targetBox.Text = FormatHotkey(_recordedModifiers, _recordedKey);
+                }
+                else
+                {
+                    targetBox.Text = FormatHotkey(_recordedToggleModifiers, _recordedToggleKey);
+                }
+                targetBox.BackColor = SystemColors.Window;
+                _recordingTarget = RecordingTarget.None;
+                _delaySlider.Focus();
+                return true;
+            }
+
+            Keys keyCode = keyData & Keys.KeyCode;
+            if (keyCode == Keys.ControlKey || keyCode == Keys.ShiftKey || keyCode == Keys.Menu)
             {
                 return true;
             }
 
-            var mods = GlobalHotkey.Modifiers.None;
+            GlobalHotkey.Modifiers mods = GlobalHotkey.Modifiers.None;
             if ((keyData & Keys.Control) != 0) mods |= GlobalHotkey.Modifiers.Control;
-            if ((keyData & Keys.Shift) != 0)   mods |= GlobalHotkey.Modifiers.Shift;
             if ((keyData & Keys.Alt) != 0)     mods |= GlobalHotkey.Modifiers.Alt;
+            if ((keyData & Keys.Shift) != 0)   mods |= GlobalHotkey.Modifiers.Shift;
 
-            TextBox targetBox = _recordingTarget == RecordingTarget.TriggerHotkey ? _hotkeyBox : _toggleHotkeyBox;
+            Keys baseKey = keyData & ~Keys.Modifiers;
 
+            // TD-66: Require at least one modifier for all hotkeys (including function keys)
+            // to avoid hijacking system-wide keys like F1 or F5.
             if (mods == GlobalHotkey.Modifiers.None)
             {
+                // TD-67: Provide clear feedback when modifier is missing
                 targetBox.Text = "Need modifier (Ctrl/Shift/Alt)";
+                targetBox.BackColor = Color.FromArgb(255, 235, 180);
                 return true;
             }
 
@@ -505,8 +572,9 @@ namespace ClipTyper
             {
                 if (mods == blocked.mod && baseKey == blocked.key)
                 {
-                    targetBox.Text = $"{FormatHotkey(mods, baseKey)} (blocked!)";
-                    targetBox.BackColor = Color.FromArgb(255, 200, 200);
+                    // TD-67: Feedback for reserved system combinations
+                    targetBox.Text = $"{FormatHotkey(mods, baseKey)} (Reserved)";
+                    targetBox.BackColor = Color.FromArgb(255, 220, 180);
                     return true;
                 }
             }
@@ -580,6 +648,19 @@ namespace ClipTyper
 
         private void OnSave(object? sender, EventArgs e)
         {
+            // TD-54: Validate empty custom delimiter
+            if (_credModeComboBox.SelectedIndex == (int)CredentialMode.Custom &&
+                string.IsNullOrWhiteSpace(_customDelimiterBox.Text))
+            {
+                MessageBox.Show(
+                    "Please enter a custom delimiter text, or select a different Credential Auto-Type mode.",
+                    "Invalid Custom Delimiter",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                _customDelimiterBox.Focus();
+                return;
+            }
+
             bool resetPosition = false;
             if (_resetPositionBtn.Tag is bool reset && reset)
             {
@@ -592,14 +673,15 @@ namespace ClipTyper
                 HotkeyKey = (int)_recordedKey,
                 OverlayToggleModifiers = (int)_recordedToggleModifiers,
                 OverlayToggleKey = (int)_recordedToggleKey,
-                OverlayToggleEnabled = true,
+                OverlayToggleEnabled = _toggleHotkeyEnableCheckbox.Checked,
                 KeystrokeDelayMs = _delaySlider.Value,
                 NewlineHandling = (NewlineMode)_newlineComboBox.SelectedIndex,
                 EnforcePlainText = _enforcePlainTextCheckbox.Checked,
                 EnableTypingJitter = _jitterCheckbox.Checked,
-                TypingJitterRangeMs = 5,
+                TypingJitterRangeMs = (int)_jitterRangeInput.Value,
                 CredentialAutoTypeMode = (CredentialMode)_credModeComboBox.SelectedIndex,
                 CredentialCustomDelimiter = _customDelimiterBox.Text,
+                CredentialCustomTransitionKey = (_customTransitionComboBox.SelectedIndex == 1) ? (ushort)0x0D : (ushort)0x09,
                 CredentialStageDelayMs = (int)_stageDelayInput.Value,
                 CredentialAutoClearClipboard = _autoClearCheckbox.Checked,
                 CredentialAutoClearDelaySeconds = (int)_autoClearDelayInput.Value,
@@ -612,18 +694,13 @@ namespace ClipTyper
                 OverlayMonitorIndex = _monitorComboBox.SelectedIndex >= 0 ? _monitorComboBox.SelectedIndex : 0,
                 AutoStartEnabled = _autostartCheckbox?.Checked ?? SettingsManager.Current.AutoStartEnabled,
                 AutoUpdateCheckEnabled = _autoUpdateCheckbox.Checked,
-                LastUpdateCheckUtc = SettingsManager.Current.LastUpdateCheckUtc
+                LastUpdateCheckUtc = SettingsManager.Current.LastUpdateCheckUtc,
+                EnableDiagnosticLogging = _loggingCheckbox.Checked
             };
 
-            SettingsSaved?.Invoke(
-                s,
-                _recordedModifiers,
-                _recordedKey,
-                _recordedToggleModifiers,
-                _recordedToggleKey,
-                true,
-                resetPosition
-            );
+            SettingsSaved?.Invoke(s, resetPosition);
+            DialogResult = DialogResult.OK;
+            Close();
         }
 
         protected override void OnLoad(EventArgs e)

@@ -8,14 +8,14 @@ namespace ClipTyper
     /// Used by the overlay to track and restore the foreground window
     /// before triggering clip-type.
     /// </summary>
-    public static class NativeMethods
+    internal static class NativeMethods
     {
         /// <summary>
         /// Retrieves a handle to the foreground window (the window with which
         /// the user is currently working).
         /// </summary>
         [DllImport("user32.dll")]
-        public static extern IntPtr GetForegroundWindow();
+        internal static extern IntPtr GetForegroundWindow();
 
         /// <summary>
         /// Brings the thread that created the specified window into the
@@ -25,7 +25,7 @@ namespace ClipTyper
         /// </summary>
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool SetForegroundWindow(IntPtr hWnd);
+        internal static extern bool SetForegroundWindow(IntPtr hWnd);
 
         /// <summary>
         /// Destroys an icon and frees any memory the icon occupied.
@@ -33,14 +33,14 @@ namespace ClipTyper
         /// </summary>
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool DestroyIcon(IntPtr hIcon);
+        internal static extern bool DestroyIcon(IntPtr hIcon);
 
         /// <summary>
         /// Retrieves the identifier of the thread that created the specified
         /// window and, optionally, the process that created the window.
         /// </summary>
         [DllImport("user32.dll")]
-        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+        internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
         /// <summary>
         /// Attaches or detaches the input processing mechanism of one thread
@@ -51,13 +51,13 @@ namespace ClipTyper
         /// </summary>
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+        internal static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
         /// <summary>
         /// Retrieves the thread identifier of the calling thread.
         /// </summary>
         [DllImport("kernel32.dll")]
-        public static extern uint GetCurrentThreadId();
+        internal static extern uint GetCurrentThreadId();
 
         /// <summary>
         /// Reliably sets the foreground window by first attaching to the
@@ -82,23 +82,23 @@ namespace ClipTyper
 
         // VK Key mapping P/Invokes for compatibility mode
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        public static extern short VkKeyScanW(char ch);
+        internal static extern short VkKeyScanW(char ch);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        public static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
+        internal static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
 
         // Process elevation & UIPI P/Invokes
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
+        internal static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
 
         [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+        internal static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
 
         [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass, out int TokenInformation, int TokenInformationLength, out int ReturnLength);
+        internal static extern bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass, out int TokenInformation, int TokenInformationLength, out int ReturnLength);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool CloseHandle(IntPtr hObject);
+        internal static extern bool CloseHandle(IntPtr hObject);
 
         private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
         private const uint TOKEN_QUERY = 0x0008;
@@ -113,7 +113,7 @@ namespace ClipTyper
         {
             if (hWnd == IntPtr.Zero) return false;
 
-            GetWindowThreadProcessId(hWnd, out uint targetPid);
+            _ = GetWindowThreadProcessId(hWnd, out uint targetPid);
             if (targetPid == 0) return false;
 
             bool currentIsElevated = IsProcessElevatedInternal(System.Diagnostics.Process.GetCurrentProcess().Handle);

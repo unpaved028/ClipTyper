@@ -29,6 +29,11 @@ namespace ClipTyper
         private bool _isRegistered;
 
         /// <summary>
+        /// Gets whether the hotkey is currently registered with the operating system.
+        /// </summary>
+        public bool IsRegistered => _isRegistered;
+
+        /// <summary>
         /// The currently registered modifier combination.
         /// </summary>
         public Modifiers CurrentModifier { get; private set; }

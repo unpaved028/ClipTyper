@@ -45,6 +45,12 @@ namespace ClipTyper
         {
             try
             {
+                // TD-78: Opt-out / diagnostic logging toggle
+                if (!SettingsManager.Current.EnableDiagnosticLogging)
+                {
+                    return;
+                }
+
                 lock (LogLock)
                 {
                     if (!Directory.Exists(LogDirectory))
@@ -70,7 +76,7 @@ namespace ClipTyper
                         }
                     }
 
-                    string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                    string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
                     string logLine = $"[{timeStamp}] [{level}] {message}{Environment.NewLine}";
 
                     File.AppendAllText(LogFilePath, logLine);

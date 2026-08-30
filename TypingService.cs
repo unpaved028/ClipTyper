@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace ClipTyper
 {
@@ -9,10 +8,14 @@ namespace ClipTyper
     /// Encapsulates single-instance typing execution, clipboard extraction, safety checks,
     /// two-stage credential typing, thread-safe UI dialog marshalling, and progress notification.
     /// </summary>
-    public class TypingService
+    public class TypingService : IDisposable
     {
         private readonly SynchronizationContext? _syncContext;
-        private int _isTypingFlag = 0; // 0 = idle, 1 = typing active
+        private readonly IKeyboardSender _keyboardSender;
+        private readonly IClipboardReader _clipboardReader;
+        private readonly IUserPrompt _userPrompt;
+        private int _isTypingFlag; // 0 = idle, 1 = typing active
+        private CancellationTokenSource? _cts;
 
         /// <summary>
         /// Gets whether a typing session is currently in progress.
@@ -29,9 +32,36 @@ namespace ClipTyper
         /// </summary>
         public event Action<bool>? TypingCompleted;
 
-        public TypingService(SynchronizationContext? syncContext = null)
+        /// <summary>
+        /// Event fired when a clip-type action was triggered but the clipboard contained no usable text (TD-41).
+        /// </summary>
+        public event Action? ClipboardEmpty;
+
+        public TypingService(
+            SynchronizationContext? syncContext = null,
+            IKeyboardSender? keyboardSender = null,
+            IClipboardReader? clipboardReader = null,
+            IUserPrompt? userPrompt = null)
         {
             _syncContext = syncContext ?? SynchronizationContext.Current;
+            _keyboardSender = keyboardSender ?? new WindowsKeyboardSender();
+            _clipboardReader = clipboardReader ?? new WindowsClipboardReader();
+            _userPrompt = userPrompt ?? new WindowsUserPrompt();
+        }
+
+        /// <summary>
+        /// Requests cancellation of the currently active typing session (TD-60, TD-69).
+        /// </summary>
+        public void CancelTyping()
+        {
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // CTS was disposed concurrently as typing completed; safe to ignore.
+            }
         }
 
         /// <summary>
@@ -47,12 +77,23 @@ namespace ClipTyper
                 return;
             }
 
+            _cts = new CancellationTokenSource();
+            CancellationTokenSource? ctsToDispose = null;
+
             try
             {
                 await Task.Run(() => PerformClipType());
             }
             finally
             {
+                ctsToDispose = _cts;
+                _cts = null;
+                try
+                {
+                    ctsToDispose?.Dispose();
+                }
+                catch (ObjectDisposedException) { }
+
                 Interlocked.Exchange(ref _isTypingFlag, 0);
             }
         }
@@ -67,11 +108,9 @@ namespace ClipTyper
                 Logger.LogWarning("Target window is elevated (Admin). Input blocked by UIPI.");
                 PostToUISync(() =>
                 {
-                    MessageBox.Show(
+                    _userPrompt.ShowWarning(
                         "The target window is running with Administrator privileges.\n\nClipTyper is currently running without Administrator privileges. Windows is blocking keyboard input to this window.\n\nPlease launch ClipTyper as Administrator as well.",
-                        "ClipTyper - Administrator Privileges Required",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                        "ClipTyper - Administrator Privileges Required");
                 });
                 return;
             }
@@ -79,9 +118,11 @@ namespace ClipTyper
             var settings = SettingsManager.Current;
 
             // 2. Read text from Clipboard safely (respecting plain text enforcement)
-            string textToType = ReadClipboardText(settings.EnforcePlainText);
+            string textToType = _clipboardReader.ReadText(settings.EnforcePlainText);
             if (string.IsNullOrEmpty(textToType))
             {
+                Logger.LogInfo("Clip-type trigger ignored: clipboard contains no usable text.");
+                PostToUI(() => ClipboardEmpty?.Invoke());
                 return;
             }
 
@@ -94,13 +135,9 @@ namespace ClipTyper
                 bool userConfirmed = false;
                 PostToUISync(() =>
                 {
-                    var res = MessageBox.Show(
+                    userConfirmed = _userPrompt.ShowConfirmation(
                         $"The clipboard text contains {textToType.Length:N0} characters.\n\nTyping will take approximately {timeStr}.\n\nDo you want to proceed with typing?",
-                        "ClipTyper - Large Text",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Question);
-
-                    userConfirmed = (res == DialogResult.Yes);
+                        "ClipTyper - Large Text");
                 });
 
                 if (!userConfirmed)
@@ -114,12 +151,13 @@ namespace ClipTyper
                 Thread.Sleep(200);
             }
 
-            // 4. Check for Two-Stage Credential Auto-Type
+            // 4. Check for Two-Stage Credential Auto-Type (TD-23: custom transition key)
             if (CredentialParser.TrySplit(
                 textToType,
                 settings.CredentialAutoTypeMode,
                 settings.CredentialCustomDelimiter,
-                out var credResult) && credResult != null)
+                out var credResult,
+                settings.CredentialCustomTransitionKey) && credResult != null)
             {
                 PerformCredentialAutoType(credResult, settings, targetHWnd);
                 return;
@@ -128,7 +166,7 @@ namespace ClipTyper
             // 5. Standard Single-Stage Typing Simulation
             PostToUI(() => ProgressChanged?.Invoke(true, 0, textToType.Length));
 
-            TypeResult result = KeyboardSimulator.SendText(
+            TypeResult result = _keyboardSender.SendText(
                 textToType,
                 delayMs: settings.KeystrokeDelayMs,
                 targetHWnd: targetHWnd,
@@ -140,7 +178,8 @@ namespace ClipTyper
                 onProgress: (current, total) =>
                 {
                     PostToUI(() => ProgressChanged?.Invoke(true, current, total));
-                }
+                },
+                isCancelRequested: () => _cts?.IsCancellationRequested == true
             );
 
             PostToUI(() =>
@@ -157,15 +196,19 @@ namespace ClipTyper
             AppSettings settings,
             IntPtr targetHWnd)
         {
-            // Security: Never log actual credential content!
-            Logger.LogInfo($"Starting Credential Auto-Type: Stage 1 ({cred.Part1.Length} chars), Stage 2 ({cred.Part2.Length} chars).");
+            // Security: Never log actual credential content or lengths (TD-79)!
+            Logger.LogInfo("Starting Credential Auto-Type (2 stages).");
 
-            int totalChars = cred.Part1.Length + cred.Part2.Length;
+            // TD-76: Trim trailing newlines from Stage 2 password to avoid premature form submission
+            string stage1Text = cred.Part1;
+            string stage2Text = cred.Part2.TrimEnd('\r', '\n');
+
+            int totalChars = stage1Text.Length + stage2Text.Length;
             PostToUI(() => ProgressChanged?.Invoke(true, 0, totalChars));
 
             // ── Stage 1: Username ──
-            TypeResult r1 = KeyboardSimulator.SendText(
-                cred.Part1,
+            TypeResult r1 = _keyboardSender.SendText(
+                stage1Text,
                 delayMs: settings.KeystrokeDelayMs,
                 targetHWnd: targetHWnd,
                 enableVkMode: settings.EnableVkCompatibilityMode,
@@ -176,7 +219,8 @@ namespace ClipTyper
                 onProgress: (current, _) =>
                 {
                     PostToUI(() => ProgressChanged?.Invoke(true, current, totalChars));
-                }
+                },
+                isCancelRequested: () => _cts?.IsCancellationRequested == true
             );
 
             if (r1 != TypeResult.Completed)
@@ -186,12 +230,12 @@ namespace ClipTyper
                     ProgressChanged?.Invoke(false, 0, 0);
                     TypingCompleted?.Invoke(false);
                 });
-                HandleTypingResult(r1, cred.Part1.Length, settings);
+                HandleTypingResult(r1, stage1Text.Length, settings);
                 return;
             }
 
             // ── Transition: Send Tab or Enter ──
-            KeyboardSimulator.SendVirtualKey(cred.TransitionVk, cred.TransitionNeedsShift);
+            _keyboardSender.SendVirtualKey(cred.TransitionVk, cred.TransitionNeedsShift);
 
             // ── Stage Delay ──
             if (settings.CredentialStageDelayMs > 0)
@@ -210,18 +254,16 @@ namespace ClipTyper
                 });
                 PostToUISync(() =>
                 {
-                    MessageBox.Show(
+                    _userPrompt.ShowWarning(
                         "Credential typing was cancelled because the active window changed before typing the password.\n\nPlease refocus the target window and try again.",
-                        "ClipTyper - Typing Cancelled",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                        "ClipTyper - Typing Cancelled");
                 });
                 return;
             }
 
             // ── Stage 2: Password ──
-            TypeResult r2 = KeyboardSimulator.SendText(
-                cred.Part2,
+            TypeResult r2 = _keyboardSender.SendText(
+                stage2Text,
                 delayMs: settings.KeystrokeDelayMs,
                 targetHWnd: targetHWnd,
                 enableVkMode: settings.EnableVkCompatibilityMode,
@@ -231,8 +273,9 @@ namespace ClipTyper
                 jitterRangeMs: settings.TypingJitterRangeMs,
                 onProgress: (current, _) =>
                 {
-                    PostToUI(() => ProgressChanged?.Invoke(true, cred.Part1.Length + current, totalChars));
-                }
+                    PostToUI(() => ProgressChanged?.Invoke(true, stage1Text.Length + current, totalChars));
+                },
+                isCancelRequested: () => _cts?.IsCancellationRequested == true
             );
 
             PostToUI(() =>
@@ -265,16 +308,14 @@ namespace ClipTyper
                 Logger.LogWarning("Typing process cancelled due to focus loss.");
                 PostToUISync(() =>
                 {
-                    MessageBox.Show(
+                    _userPrompt.ShowWarning(
                         "Typing was cancelled because the active window changed.\n\nPlease refocus the target window and try again.",
-                        "ClipTyper - Typing Cancelled",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                        "ClipTyper - Typing Cancelled");
                 });
             }
             else if (result == TypeResult.AbortedByEscape)
             {
-                Logger.LogInfo("Typing cancelled by pressing Escape.");
+                Logger.LogInfo("Typing cancelled by pressing Escape or programmatic abort.");
             }
         }
 
@@ -287,7 +328,7 @@ namespace ClipTyper
                 {
                     try
                     {
-                        Clipboard.Clear();
+                        _clipboardReader.Clear();
                         Logger.LogInfo("Clipboard automatically cleared after credential auto-type.");
                     }
                     catch (Exception ex)
@@ -298,41 +339,12 @@ namespace ClipTyper
             });
         }
 
+        /// <summary>
+        /// Convenience method to read text directly via <see cref="WindowsClipboardReader"/>.
+        /// </summary>
         public static string ReadClipboardText(bool enforcePlainText = false)
         {
-            string textToType = "";
-            try
-            {
-                if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
-                {
-                    if (Clipboard.ContainsText())
-                    {
-                        textToType = enforcePlainText
-                            ? Clipboard.GetText(TextDataFormat.UnicodeText)
-                            : Clipboard.GetText();
-                    }
-                }
-                else
-                {
-                    var thread = new Thread(() =>
-                    {
-                        if (Clipboard.ContainsText())
-                        {
-                            textToType = enforcePlainText
-                                ? Clipboard.GetText(TextDataFormat.UnicodeText)
-                                : Clipboard.GetText();
-                        }
-                    });
-                    thread.SetApartmentState(ApartmentState.STA);
-                    thread.Start();
-                    thread.Join(2000);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Clipboard error", ex);
-            }
-            return textToType;
+            return new WindowsClipboardReader().ReadText(enforcePlainText);
         }
 
         private void PostToUI(Action action)
@@ -356,6 +368,21 @@ namespace ClipTyper
             else
             {
                 action();
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _cts?.Dispose();
+                _cts = null;
             }
         }
     }

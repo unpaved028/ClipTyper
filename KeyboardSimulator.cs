@@ -15,10 +15,10 @@ namespace ClipTyper
     public static class KeyboardSimulator
     {
         [DllImport("user32.dll", SetLastError = true)]
-        public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+        internal static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
         [DllImport("user32.dll")]
-        public static extern short GetAsyncKeyState(int vKey);
+        internal static extern short GetAsyncKeyState(int vKey);
 
         [StructLayout(LayoutKind.Sequential)]
         public struct INPUT
@@ -105,7 +105,7 @@ namespace ClipTyper
                     inputs[0] = new INPUT { type = INPUT_KEYBOARD };
                     inputs[0].U.ki.wVk = vk;
                     inputs[0].U.ki.dwFlags = KEYEVENTF_KEYUP;
-                    SendInput(1, inputs, INPUT.Size);
+                    _ = SendInput(1, inputs, INPUT.Size);
                 }
             }
         }
@@ -246,7 +246,7 @@ namespace ClipTyper
             INPUT[] input = new INPUT[1];
             input[0] = new INPUT { type = INPUT_KEYBOARD };
             input[0].U.ki.wVk = vk;
-            SendInput(1, input, INPUT.Size);
+            _ = SendInput(1, input, INPUT.Size);
             Thread.Sleep(2);
         }
 
@@ -256,7 +256,7 @@ namespace ClipTyper
             input[0] = new INPUT { type = INPUT_KEYBOARD };
             input[0].U.ki.wVk = vk;
             input[0].U.ki.dwFlags = KEYEVENTF_KEYUP;
-            SendInput(1, input, INPUT.Size);
+            _ = SendInput(1, input, INPUT.Size);
             Thread.Sleep(2);
         }
 
@@ -276,18 +276,16 @@ namespace ClipTyper
             }
             else
             {
-                down[0].U.ki.wVk = 0;
                 down[0].U.ki.wScan = keyOrChar;
                 down[0].U.ki.dwFlags = KEYEVENTF_UNICODE;
 
-                up[0].U.ki.wVk = 0;
                 up[0].U.ki.wScan = keyOrChar;
                 up[0].U.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
             }
 
-            SendInput(1, down, INPUT.Size);
+            _ = SendInput(1, down, INPUT.Size);
             Thread.Sleep(5);
-            SendInput(1, up, INPUT.Size);
+            _ = SendInput(1, up, INPUT.Size);
         }
     }
 }

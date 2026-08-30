@@ -1,0 +1,63 @@
+root = true
+
+# All files
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = crlf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# XML / JSON / YAML files
+[*.{json,yml,yaml,xml,csproj,sln,iss}]
+indent_size = 2
+
+# Markdown files
+[*.md]
+trim_trailing_whitespace = false
+indent_size = 2
+
+# C# files
+[*.cs]
+indent_size = 4
+
+# Organize Usings
+dotnet_separate_import_directive_groups = false
+dotnet_sort_system_directives_first = true
+
+# Style Rules
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+
+# Expression-bodied members
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_expression_bodied_accessors = true:suggestion
+
+# Null checking preferences
+csharp_style_throw_expression = true:suggestion
+csharp_style_null_coalescing_operator = true:suggestion
+csharp_style_conditional_delegate_call = true:suggestion
+
+# Pattern matching
+csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
+csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
+csharp_style_inlined_variable_declaration = true:suggestion
+
+# Formatting rules
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+
+# Analysis Rules: Allow standard Win32 uppercase underscores (e.g. WM_HOTKEY, VK_TAB, INPUT_KEYBOARD)
+dotnet_diagnostic.CA1707.severity = none

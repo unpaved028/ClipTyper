@@ -1,5 +1,5 @@
 #define MyAppName "ClipTyper"
-#define MyAppVersion "1.6.0"
+#define MyAppVersion "1.6.1"
 #define MyAppPublisher "unpaved028"
 #define MyAppExeName "ClipTyper.exe"
 

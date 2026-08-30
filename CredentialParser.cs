@@ -25,7 +25,8 @@ namespace ClipTyper
             string input,
             CredentialMode mode,
             string customDelimiter,
-            out CredentialSplitResult? result)
+            out CredentialSplitResult? result,
+            ushort customTransitionVk = VK_TAB)
         {
             result = null;
             if (string.IsNullOrEmpty(input) || mode == CredentialMode.Off)
@@ -63,14 +64,14 @@ namespace ClipTyper
 
             if (mode == CredentialMode.Custom)
             {
-                if (!string.IsNullOrEmpty(customDelimiter))
+                if (!string.IsNullOrWhiteSpace(customDelimiter))
                 {
                     int customIdx = text.IndexOf(customDelimiter, StringComparison.Ordinal);
                     if (customIdx >= 0)
                     {
                         string p1 = text.Substring(0, customIdx);
                         string p2 = text.Substring(customIdx + customDelimiter.Length);
-                        result = new CredentialSplitResult(p1, p2, VK_TAB);
+                        result = new CredentialSplitResult(p1, p2, customTransitionVk);
                         return true;
                     }
                 }

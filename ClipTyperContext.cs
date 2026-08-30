@@ -1,10 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
-using System.IO;
 using System.Reflection;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace ClipTyper
@@ -12,12 +10,15 @@ namespace ClipTyper
     public class ClipTyperContext : ApplicationContext
     {
         private NotifyIcon _trayIcon;
+        private ToolStripMenuItem _stopTypingMenuItem = null!;
+        private ToolStripSeparator _stopTypingSeparator = null!;
+        private Font? _boldMenuFont;
         private GlobalHotkey _hotkey;
         private GlobalHotkey? _overlayToggleHotkey;
         private OverlayForm? _overlay;
         private Icon? _badgedTrayIcon;
         private UpdateChecker.UpdateCheckResult? _cachedUpdateResult;
-        private TypingService _typingService;
+        private readonly TypingService _typingService;
         private const int HotkeyId = 1;
         private const int OverlayToggleHotkeyId = 2;
 
@@ -61,7 +62,7 @@ namespace ClipTyper
             }
         }
 
-        private HotkeyForm _hiddenForm;
+        private readonly HotkeyForm _hiddenForm;
 
         /// <summary>
         /// Loads the embedded app icon (256x256) from the assembly resources.
@@ -72,7 +73,6 @@ namespace ClipTyper
             try
             {
                 var assembly = Assembly.GetExecutingAssembly();
-                // Resource logical name set in .csproj: ClipTyper.icon_app.ico
                 using var stream = assembly.GetManifestResourceStream("ClipTyper.icon_app.ico");
                 if (stream != null)
                 {
@@ -86,19 +86,22 @@ namespace ClipTyper
 
         public ClipTyperContext()
         {
+            // TD-74: Ensure WinForms SynchronizationContext is installed before capturing
+            if (SynchronizationContext.Current == null)
+            {
+                SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
+            }
+
             // Load persisted settings
             SettingsManager.Load();
             var settings = SettingsManager.Current;
 
-            _typingService = new TypingService(SynchronizationContext.Current);
-            _typingService.ProgressChanged += (isTyping, current, total) =>
-            {
-                _overlay?.SetTypingState(isTyping, current, total);
-            };
-            _typingService.TypingCompleted += (completed) =>
-            {
-                _overlay?.SetTypingState(false, completed: completed);
-            };
+            _hiddenForm = new HotkeyForm();
+            _hiddenForm.HotkeyPressed += OnHotkeyPressed;
+            _hiddenForm.OverlayToggleHotkeyPressed += OnOverlayToggleHotkeyPressed;
+            _hiddenForm.CloseRequested += () => OnExit(this, EventArgs.Empty);
+
+            var handle = _hiddenForm.Handle;
 
             _trayIcon = new NotifyIcon()
             {
@@ -108,33 +111,90 @@ namespace ClipTyper
                 Text = "ClipTyper"
             };
 
+            _typingService = new TypingService(SynchronizationContext.Current);
+            _typingService.ProgressChanged += (isTyping, current, total) =>
+            {
+                _overlay?.SetTypingState(isTyping, current, total);
+                // TD-09: Update tray icon tooltip text with progress
+                if (isTyping)
+                {
+                    string progressText = (total > 0) ? $"ClipTyper ({current * 100 / total}%)" : "ClipTyper (Typing...)";
+                    if (_trayIcon.Text != progressText) _trayIcon.Text = progressText;
+                }
+                else
+                {
+                    _trayIcon.Text = "ClipTyper";
+                }
+            };
+
+            _typingService.TypingCompleted += (completed) =>
+            {
+                _overlay?.SetTypingState(false, completed: completed);
+                _trayIcon.Text = "ClipTyper";
+            };
+
+            // TD-41: User feedback when clipboard has no usable text
+            _typingService.ClipboardEmpty += () =>
+            {
+                _trayIcon.ShowBalloonTip(
+                    3000,
+                    "ClipTyper",
+                    "The clipboard contains no text to type.",
+                    ToolTipIcon.Info);
+            };
+
+            // TD-70: Build tray menu once, cache bold font, avoid allocation leaks on menu open
+            _boldMenuFont = new Font(_trayIcon.ContextMenuStrip.Font, FontStyle.Bold);
+            _stopTypingMenuItem = new ToolStripMenuItem("⏹ Stop Typing", null, (_, _) => _typingService.CancelTyping())
+            {
+                Font = _boldMenuFont,
+                ForeColor = Color.DarkRed,
+                Visible = false
+            };
+            _stopTypingSeparator = new ToolStripSeparator() { Visible = false };
+
+            _trayIcon.ContextMenuStrip.Items.Add(_stopTypingMenuItem);
+            _trayIcon.ContextMenuStrip.Items.Add(_stopTypingSeparator);
             _trayIcon.ContextMenuStrip.Items.Add("Settings", null, OnSettings);
             _trayIcon.ContextMenuStrip.Items.Add("About", null, OnAbout);
             _trayIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
             _trayIcon.ContextMenuStrip.Items.Add("Exit", null, OnExit);
 
-            _hiddenForm = new HotkeyForm();
-            _hiddenForm.HotkeyPressed += OnHotkeyPressed;
-            _hiddenForm.OverlayToggleHotkeyPressed += OnOverlayToggleHotkeyPressed;
-            _hiddenForm.CloseRequested += () => OnExit(this, EventArgs.Empty);
-
-            var handle = _hiddenForm.Handle;
+            _trayIcon.ContextMenuStrip.Opening += OnContextMenuOpening;
 
             // Register the hotkey from settings (or default Ctrl+Shift+T)
             _hotkey = new GlobalHotkey(
-                _hiddenForm.Handle,
+                handle,
                 HotkeyId,
                 (GlobalHotkey.Modifiers)settings.HotkeyModifiers,
                 (Keys)settings.HotkeyKey);
+
+            // TD-03: Check if primary hotkey registration succeeded
+            if (!_hotkey.IsRegistered)
+            {
+                string hotkeyName = SettingsForm.FormatHotkey((GlobalHotkey.Modifiers)settings.HotkeyModifiers, (Keys)settings.HotkeyKey);
+                Logger.LogWarning($"Primary hotkey '{hotkeyName}' could not be registered on startup.");
+                _trayIcon.ShowBalloonTip(
+                    5000,
+                    "ClipTyper - Hotkey Registration Failed",
+                    $"The hotkey '{hotkeyName}' is already in use by another application.\n\nPlease open Settings and choose a different hotkey.",
+                    ToolTipIcon.Warning);
+            }
 
             // Register the overlay toggle hotkey if enabled
             if (settings.OverlayToggleEnabled)
             {
                 _overlayToggleHotkey = new GlobalHotkey(
-                    _hiddenForm.Handle,
+                    handle,
                     OverlayToggleHotkeyId,
                     (GlobalHotkey.Modifiers)settings.OverlayToggleModifiers,
                     (Keys)settings.OverlayToggleKey);
+
+                if (!_overlayToggleHotkey.IsRegistered)
+                {
+                    string toggleName = SettingsForm.FormatHotkey((GlobalHotkey.Modifiers)settings.OverlayToggleModifiers, (Keys)settings.OverlayToggleKey);
+                    Logger.LogWarning($"Overlay toggle hotkey '{toggleName}' could not be registered on startup.");
+                }
             }
 
             // Show overlay if enabled in settings
@@ -150,8 +210,27 @@ namespace ClipTyper
                 InstallHelper.SetAutoStart(settings.AutoStartEnabled);
             }
 
+            // TD-77: Warn if portable mode directory is read-only and falling back to LocalAppData
+            if (SettingsManager.IsPortableFallbackToAppData)
+            {
+                Logger.LogWarning($"Running in portable mode, but directory '{SettingsManager.ExeDir}' is write-protected. Falling back to '{SettingsManager.SettingsDir}'.");
+                _trayIcon.ShowBalloonTip(
+                    6000,
+                    "ClipTyper - Read-Only Directory",
+                    "ClipTyper is running from a write-protected directory.\nSettings are being saved to LocalAppData instead.",
+                    ToolTipIcon.Warning);
+            }
+
             // Check for updates in background (24h throttled)
             RunStartupUpdateCheck();
+        }
+
+        private void OnContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // TD-70: Toggle visibility instead of rebuilding menu on each open
+            bool isTyping = _typingService.IsTyping;
+            _stopTypingMenuItem.Visible = isTyping;
+            _stopTypingSeparator.Visible = isTyping;
         }
 
         // ── Automated Update Check & Badging ──────────────────────
@@ -167,7 +246,7 @@ namespace ClipTyper
                 return;
             }
 
-            Task.Run(async () =>
+            System.Threading.Tasks.Task.Run(async () =>
             {
                 var result = await UpdateChecker.CheckAsync();
                 settings.LastUpdateCheckUtc = DateTime.UtcNow;
@@ -246,60 +325,46 @@ namespace ClipTyper
                 _badgedTrayIcon?.Dispose();
                 _badgedTrayIcon = newIcon;
 
-                // TD-08: Free native Win32 icon handle created by GetHicon() to prevent GDI leak
+                // Free native Win32 icon handle created by GetHicon()
                 NativeMethods.DestroyIcon(hIcon);
             }
             catch
             {
+                // Fall back to unbadged icon on GDI error
                 _trayIcon.Icon = LoadEmbeddedIcon();
             }
         }
 
-        // ── Hotkey Handler ──────────────────────────────────────────
-
-        private void OnHotkeyPressed()
-        {
-            _ = _typingService.TriggerClipTypeAsync();
-        }
-
-        private void OnOverlayToggleHotkeyPressed()
-        {
-            if (_hiddenForm.InvokeRequired)
-            {
-                _hiddenForm.BeginInvoke(new Action(OnOverlayToggleHotkeyPressed));
-                return;
-            }
-
-            var settings = SettingsManager.Current;
-            settings.OverlayEnabled = !settings.OverlayEnabled;
-            SettingsManager.Save();
-
-            if (settings.OverlayEnabled)
-            {
-                ShowOverlay();
-            }
-            else
-            {
-                HideOverlay();
-            }
-        }
-
-        // ── Overlay Management ──────────────────────────────────────
+        // ── Floating Overlay Management ─────────────────────────────
 
         private void ShowOverlay()
         {
             if (_overlay != null) return;
 
-            _overlay = new OverlayForm(() =>
-            {
-                _ = _typingService.TriggerClipTypeAsync();
-            });
+            _overlay = new OverlayForm(
+                triggerClipType: () =>
+                {
+                    _ = _typingService.TriggerClipTypeAsync();
+                },
+                onStopTyping: () =>
+                {
+                    _typingService.CancelTyping();
+                },
+                isTypingQuery: () => _typingService.IsTyping);
 
             _overlay.OverlayHidden += () =>
             {
-                HideOverlay();
-                SettingsManager.Current.OverlayEnabled = false;
+                var settings = SettingsManager.Current;
+                settings.OverlayEnabled = false;
                 SettingsManager.Save();
+                HideOverlay();
+            };
+
+            _overlay.ScaleChanged += (newScale) =>
+            {
+                // TD-71: OverlayForm already saved settings during ApplyScale/SavePosition; keep in-memory model in sync
+                var settings = SettingsManager.Current;
+                settings.OverlayScalePercent = newScale;
             };
 
             if (_cachedUpdateResult != null && _cachedUpdateResult.IsUpdateAvailable)
@@ -318,14 +383,37 @@ namespace ClipTyper
             _overlay = null;
         }
 
+        private void OnOverlayToggleHotkeyPressed()
+        {
+            var settings = SettingsManager.Current;
+            settings.OverlayEnabled = !settings.OverlayEnabled;
+            SettingsManager.Save();
+
+            if (settings.OverlayEnabled)
+            {
+                ShowOverlay();
+            }
+            else
+            {
+                HideOverlay();
+            }
+        }
+
+        // ── Hotkey Handler ──────────────────────────────────────────
+
+        private void OnHotkeyPressed()
+        {
+            _ = _typingService.TriggerClipTypeAsync();
+        }
+
         // ── Settings Dialog ─────────────────────────────────────────
 
         private void OnSettings(object? sender, EventArgs e)
         {
             int originalScale = SettingsManager.Current.OverlayScalePercent;
+
             using var form = new SettingsForm();
 
-            // Set up live preview handler
             Action<int> liveScaleHandler = (scale) =>
             {
                 if (_overlay != null && SettingsManager.Current.OverlayEnabled)
@@ -335,12 +423,16 @@ namespace ClipTyper
             };
             form.LiveScaleChanged += liveScaleHandler;
 
-            form.SettingsSaved += (updatedSettings, modifiers, key, toggleMods, toggleKey, toggleEnabled, resetPosition) =>
+            form.SettingsSaved += (updatedSettings, resetPosition) =>
             {
+                var current = SettingsManager.Current;
+
                 // Try to update the trigger hotkey
-                if (modifiers != _hotkey.CurrentModifier || key != _hotkey.CurrentKey)
+                var newMod = (GlobalHotkey.Modifiers)updatedSettings.HotkeyModifiers;
+                var newKey = (Keys)updatedSettings.HotkeyKey;
+                if (newMod != _hotkey.CurrentModifier || newKey != _hotkey.CurrentKey)
                 {
-                    if (!_hotkey.Reregister(modifiers, key))
+                    if (!_hotkey.Reregister(newMod, newKey))
                     {
                         MessageBox.Show(
                             "Could not register the hotkey. It may be in use by another application.\n\n" +
@@ -348,16 +440,35 @@ namespace ClipTyper
                             "Hotkey Registration Failed",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
-                        return;
+                        // TD-40: Revert only the hotkey property so other settings are NOT lost
+                        updatedSettings.HotkeyModifiers = (int)_hotkey.CurrentModifier;
+                        updatedSettings.HotkeyKey = (int)_hotkey.CurrentKey;
                     }
                 }
 
                 // Try to update overlay toggle hotkey
-                if (toggleEnabled)
+                if (updatedSettings.OverlayToggleEnabled)
                 {
+                    var toggleMods = (GlobalHotkey.Modifiers)updatedSettings.OverlayToggleModifiers;
+                    var toggleKey = (Keys)updatedSettings.OverlayToggleKey;
+
                     if (_overlayToggleHotkey == null)
                     {
                         _overlayToggleHotkey = new GlobalHotkey(_hiddenForm.Handle, OverlayToggleHotkeyId, toggleMods, toggleKey);
+                        if (!_overlayToggleHotkey.IsRegistered)
+                        {
+                            MessageBox.Show(
+                                "Could not register the overlay toggle hotkey. It may be in use by another application.",
+                                "Hotkey Registration Failed",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning);
+
+                            _overlayToggleHotkey.Dispose();
+                            _overlayToggleHotkey = null;
+                            // TD-68: Revert settings on failed registration
+                            updatedSettings.OverlayToggleModifiers = current.OverlayToggleModifiers;
+                            updatedSettings.OverlayToggleKey = current.OverlayToggleKey;
+                        }
                     }
                     else if (toggleMods != _overlayToggleHotkey.CurrentModifier || toggleKey != _overlayToggleHotkey.CurrentKey)
                     {
@@ -369,7 +480,10 @@ namespace ClipTyper
                                 "Hotkey Registration Failed",
                                 MessageBoxButtons.OK,
                                 MessageBoxIcon.Warning);
-                            return;
+
+                            // TD-68: Revert settings on failed registration
+                            updatedSettings.OverlayToggleModifiers = (int)_overlayToggleHotkey.CurrentModifier;
+                            updatedSettings.OverlayToggleKey = (int)_overlayToggleHotkey.CurrentKey;
                         }
                     }
                 }
@@ -387,48 +501,20 @@ namespace ClipTyper
                 }
                 else
                 {
-                    updatedSettings.OverlayX = SettingsManager.Current.OverlayX;
-                    updatedSettings.OverlayY = SettingsManager.Current.OverlayY;
+                    updatedSettings.OverlayX = current.OverlayX;
+                    updatedSettings.OverlayY = current.OverlayY;
                 }
 
-                // Save updated settings
-                var current = SettingsManager.Current;
-                current.HotkeyModifiers = updatedSettings.HotkeyModifiers;
-                current.HotkeyKey = updatedSettings.HotkeyKey;
-                current.OverlayToggleModifiers = updatedSettings.OverlayToggleModifiers;
-                current.OverlayToggleKey = updatedSettings.OverlayToggleKey;
-                current.OverlayToggleEnabled = updatedSettings.OverlayToggleEnabled;
-                current.KeystrokeDelayMs = updatedSettings.KeystrokeDelayMs;
-                current.NewlineHandling = updatedSettings.NewlineHandling;
-                current.EnforcePlainText = updatedSettings.EnforcePlainText;
-                current.EnableTypingJitter = updatedSettings.EnableTypingJitter;
-                current.TypingJitterRangeMs = updatedSettings.TypingJitterRangeMs;
-                current.CredentialAutoTypeMode = updatedSettings.CredentialAutoTypeMode;
-                current.CredentialCustomDelimiter = updatedSettings.CredentialCustomDelimiter;
-                current.CredentialStageDelayMs = updatedSettings.CredentialStageDelayMs;
-                current.CredentialAutoClearClipboard = updatedSettings.CredentialAutoClearClipboard;
-                current.CredentialAutoClearDelaySeconds = updatedSettings.CredentialAutoClearDelaySeconds;
-                current.SanitizeInput = updatedSettings.SanitizeInput;
-                current.MaxTextLengthThreshold = updatedSettings.MaxTextLengthThreshold;
-                current.EnableVkCompatibilityMode = updatedSettings.EnableVkCompatibilityMode;
-                current.SoundFeedbackEnabled = updatedSettings.SoundFeedbackEnabled;
-                current.OverlayEnabled = updatedSettings.OverlayEnabled;
-                current.OverlayScalePercent = updatedSettings.OverlayScalePercent;
-                current.OverlayMonitorIndex = updatedSettings.OverlayMonitorIndex;
-                current.OverlayX = updatedSettings.OverlayX;
-                current.OverlayY = updatedSettings.OverlayY;
-                current.AutoStartEnabled = updatedSettings.AutoStartEnabled;
-                current.AutoUpdateCheckEnabled = updatedSettings.AutoUpdateCheckEnabled;
-
-                SettingsManager.Save();
+                // TD-39: Save all updated settings via single Replace method
+                SettingsManager.Replace(updatedSettings);
 
                 // Apply overlay changes
-                if (current.OverlayEnabled)
+                if (updatedSettings.OverlayEnabled)
                 {
                     if (_overlay != null)
                     {
-                        _overlay.ApplyScale(current.OverlayScalePercent);
-                        _overlay.MoveToMonitor(current.OverlayMonitorIndex);
+                        _overlay.ApplyScale(updatedSettings.OverlayScalePercent);
+                        _overlay.MoveToMonitor(updatedSettings.OverlayMonitorIndex);
                         if (resetPosition)
                         {
                             _overlay.MoveToDefaultPosition();
@@ -444,30 +530,31 @@ namespace ClipTyper
                     HideOverlay();
                 }
 
-                // Force topmost to be re-applied to ensure it stays on top
+                // Force topmost to be re-applied
                 if (_overlay != null)
                 {
                     _overlay.TopMost = false;
                     _overlay.TopMost = true;
                 }
 
-                // Apply autostart changes (Winget mode only)
+                // Winget/installed mode: update autostart
                 if (!SettingsManager.IsPortable)
                 {
-                    InstallHelper.SetAutoStart(current.AutoStartEnabled);
+                    InstallHelper.SetAutoStart(updatedSettings.AutoStartEnabled);
                 }
             };
 
-            if (form.ShowDialog() != DialogResult.OK)
+            var result = form.ShowDialog();
+
+            form.LiveScaleChanged -= liveScaleHandler;
+
+            // Revert live preview scale on Cancel
+            if (result != DialogResult.OK && _overlay != null && SettingsManager.Current.OverlayEnabled)
             {
-                // Revert any live scale preview if canceled
-                if (_overlay != null && SettingsManager.Current.OverlayEnabled)
-                {
-                    _overlay.ApplyScale(originalScale);
-                }
+                _overlay.ApplyScale(originalScale);
             }
 
-            // Force topmost to be re-applied after dialog is closed to prevent Z-order loss
+            // Force topmost to be re-applied after dialog is closed
             if (_overlay != null)
             {
                 _overlay.TopMost = false;
@@ -475,284 +562,32 @@ namespace ClipTyper
             }
         }
 
-        // ── About Dialog ────────────────────────────────────────────
-
-        // ── About Dialog ────────────────────────────────────────────
+        // ── About Dialog (TD-05, TD-06) ─────────────────────────────
 
         private void OnAbout(object? sender, EventArgs e)
         {
-            string version = UpdateChecker.GetCurrentVersion();
             string hotkeyText = SettingsForm.FormatHotkey(_hotkey.CurrentModifier, _hotkey.CurrentKey);
             bool overlayActive = _overlay != null && SettingsManager.Current.OverlayEnabled;
 
-            // Build dynamic trigger description
-            string triggerInfo;
-            if (hotkeyText != "None" && overlayActive)
-            {
-                triggerInfo = $"Press {hotkeyText} or click the Overlay to type the clipboard contents.";
-            }
-            else if (hotkeyText != "None")
-            {
-                triggerInfo = $"Press {hotkeyText} to type the clipboard contents.";
-            }
-            else if (overlayActive)
-            {
-                triggerInfo = "Click the Overlay to type the clipboard contents.";
-            }
-            else
-            {
-                triggerInfo = "Configure a hotkey or enable the Overlay in Settings.";
-            }
-
-            var aboutForm = new Form
-            {
-                Text = "About ClipTyper",
-                Size = new Size(380, 260),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MaximizeBox = false,
-                MinimizeBox = false,
-                StartPosition = FormStartPosition.CenterScreen,
-                ShowInTaskbar = false
-            };
-
-            var infoLabel = new Label
-            {
-                Text = $"ClipTyper v{version}\n\n" +
-                       $"{triggerInfo}\n\n" +
-                       "A lightweight portable typing tool for simulating\n" +
-                       "keyboard input from clipboard text.",
-                Location = new Point(15, 15),
-                Size = new Size(340, 95),
-                AutoSize = false
-            };
-
-            // ── Links ───────────────────────────────────────────────
-
-            var repoLink = new LinkLabel
-            {
-                Text = "GitHub Repository",
-                Location = new Point(15, 115),
-                AutoSize = true
-            };
-            repoLink.Click += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper");
-
-            var issueLink = new LinkLabel
-            {
-                Text = "Report a Bug",
-                Location = new Point(160, 115),
-                AutoSize = true
-            };
-            issueLink.Click += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper/issues/new");
-
-            // ── Update Check ────────────────────────────────────────
-
-            var updateBtn = new Button
-            {
-                Text = "Check for Updates",
-                Location = new Point(15, 145),
-                Size = new Size(140, 28)
-            };
-
-            var updateLabel = new Label
-            {
-                Text = "",
-                Location = new Point(15, 180),
-                Size = new Size(340, 22),
-                AutoSize = false
-            };
-
-            updateBtn.Click += async (_, _) =>
-            {
-                updateBtn.Enabled = false;
-                updateBtn.Text = "Checking...";
-                updateLabel.Text = "";
-                RemoveControlByName(aboutForm, "_updateAction");
-
-                var result = await UpdateChecker.CheckAsync();
-                SettingsManager.Current.LastUpdateCheckUtc = DateTime.UtcNow;
-                SettingsManager.Save();
-
-                if (result == null)
-                {
-                    updateLabel.Text = "Could not check for updates. Please check your internet connection.";
-                    aboutForm.Size = new Size(380, 260);
-                }
-                else
-                {
-                    if (result.IsUpdateAvailable)
-                    {
-                        NotifyUpdateAvailable(result);
-                    }
-                    RenderUpdateResult(aboutForm, updateLabel, result);
-                }
-
-                updateBtn.Text = "Check for Updates";
-                updateBtn.Enabled = true;
-            };
-
-            var closeBtn = new Button
-            {
-                Text = "Close",
-                Location = new Point(270, 145),
-                Size = new Size(80, 28),
-                DialogResult = DialogResult.OK
-            };
-
-            aboutForm.Controls.AddRange(new Control[]
-            {
-                infoLabel, repoLink, issueLink,
-                updateBtn, updateLabel, closeBtn
-            });
-            aboutForm.AcceptButton = closeBtn;
-
-            // If an update is already known from background check, render it immediately
-            if (_cachedUpdateResult != null && _cachedUpdateResult.IsUpdateAvailable)
-            {
-                RenderUpdateResult(aboutForm, updateLabel, _cachedUpdateResult);
-            }
-
+            using var aboutForm = new AboutForm(hotkeyText, overlayActive, _cachedUpdateResult);
+            aboutForm.UpdateAvailable += NotifyUpdateAvailable;
             aboutForm.ShowDialog();
         }
 
-        private static void RenderUpdateResult(Form aboutForm, Label updateLabel, UpdateChecker.UpdateCheckResult result)
-        {
-            RemoveControlByName(aboutForm, "_updateAction");
-
-            if (result.IsUpdateAvailable)
-            {
-                updateLabel.Text = $"Update available: v{result.LatestVersion}";
-                int currentY = 205;
-
-                // Display release notes snippet if present
-                if (!string.IsNullOrWhiteSpace(result.ReleaseNotes))
-                {
-                    string notes = result.ReleaseNotes.Trim();
-                    if (notes.Length > 300)
-                    {
-                        notes = notes.Substring(0, 300).TrimEnd() + "...";
-                    }
-
-                    var notesBox = new TextBox
-                    {
-                        Name = "_updateAction",
-                        Text = notes,
-                        Location = new Point(15, currentY),
-                        Size = new Size(335, 70),
-                        Multiline = true,
-                        ReadOnly = true,
-                        ScrollBars = ScrollBars.Vertical,
-                        BackColor = SystemColors.Control,
-                        BorderStyle = BorderStyle.FixedSingle,
-                        Font = new Font("Segoe UI", 8.5f)
-                    };
-
-                    var readMoreLink = new LinkLabel
-                    {
-                        Name = "_updateAction",
-                        Text = "Read more...",
-                        Location = new Point(15, currentY + 75),
-                        AutoSize = true
-                    };
-                    readMoreLink.Click += (_, _) => OpenUrl(result.ReleaseUrl);
-
-                    aboutForm.Controls.AddRange(new Control[] { notesBox, readMoreLink });
-                    currentY += 98;
-                }
-
-                if (!SettingsManager.IsPortable)
-                {
-                    // Winget mode: show winget command with copy button
-                    string wingetCmd = "winget upgrade unpaved028.ClipTyper";
-                    var cmdLabel = new Label
-                    {
-                        Name = "_updateAction",
-                        Text = wingetCmd,
-                        Location = new Point(15, currentY + 3),
-                        AutoSize = true,
-                        Font = new Font("Consolas", 9f),
-                        ForeColor = Color.DarkBlue
-                    };
-
-                    var copyBtn = new Button
-                    {
-                        Name = "_updateAction",
-                        Text = "📋 Copy",
-                        Location = new Point(285, currentY),
-                        Size = new Size(65, 23)
-                    };
-                    copyBtn.Click += (_, _) =>
-                    {
-                        Clipboard.SetText(wingetCmd);
-                        copyBtn.Text = "✓ Copied";
-                    };
-
-                    aboutForm.Controls.AddRange(new Control[] { cmdLabel, copyBtn });
-                    currentY += 35;
-                }
-                else
-                {
-                    // Portable/Slim: show GitHub download link
-                    var downloadLink = new LinkLabel
-                    {
-                        Name = "_updateAction",
-                        Text = "Download from GitHub",
-                        Location = new Point(15, currentY + 3),
-                        AutoSize = true
-                    };
-                    downloadLink.Click += (_, _) => OpenUrl(result.ReleaseUrl);
-                    aboutForm.Controls.Add(downloadLink);
-                    currentY += 25;
-                }
-
-                aboutForm.Size = new Size(380, currentY + 45);
-            }
-            else
-            {
-                updateLabel.Text = $"You're running the latest version (v{result.CurrentVersion}).";
-                aboutForm.Size = new Size(380, 260);
-            }
-        }
-
-        /// <summary>
-        /// Opens a URL in the default browser.
-        /// </summary>
-        private static void OpenUrl(string url)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = url,
-                    UseShellExecute = true
-                });
-            }
-            catch { }
-        }
-
-        /// <summary>
-        /// Removes all controls with the specified Name from a form.
-        /// Used to clean up dynamically added update action controls.
-        /// </summary>
-        private static void RemoveControlByName(Form form, string name)
-        {
-            for (int i = form.Controls.Count - 1; i >= 0; i--)
-            {
-                if (form.Controls[i].Name == name)
-                {
-                    form.Controls.RemoveAt(i);
-                }
-            }
-        }
-
-        // ── Exit ────────────────────────────────────────────────────
+        // ── Shutdown ────────────────────────────────────────────────
 
         private void OnExit(object? sender, EventArgs e)
         {
             _trayIcon.Visible = false;
-            _hotkey?.Dispose();
-            _overlayToggleHotkey?.Dispose();
+            _badgedTrayIcon?.Dispose();
+            _trayIcon.Dispose();
+            _boldMenuFont?.Dispose();
+            _overlay?.Close();
             _overlay?.Dispose();
-            _hiddenForm?.Dispose();
+            _hotkey.Dispose();
+            _overlayToggleHotkey?.Dispose();
+            _typingService.Dispose();
+            _hiddenForm.Dispose();
             Application.Exit();
         }
     }

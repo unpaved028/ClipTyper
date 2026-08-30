@@ -54,8 +54,9 @@ namespace ClipTyper
 
                 // Strip leading 'v' from tag (e.g., "v1.3.0" → "1.3.0")
                 var latestVersionStr = tagName.TrimStart('v', 'V');
+                var cleanVersionStr = latestVersionStr.Split('-', '+')[0];
 
-                if (!Version.TryParse(latestVersionStr, out var latestVersion))
+                if (!Version.TryParse(cleanVersionStr, out var latestVersion))
                     return null;
 
                 if (!Version.TryParse(currentVersion, out var current))

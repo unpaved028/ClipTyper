@@ -18,7 +18,8 @@ namespace ClipTyper
         private const string AutostartRegKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
         private static readonly string ExePath =
-            System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+            Environment.ProcessPath
+            ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
             ?? Path.Combine(AppContext.BaseDirectory, "ClipTyper.exe");
 
         private static readonly string ShortcutPath = Path.Combine(
@@ -50,7 +51,7 @@ namespace ClipTyper
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to create Start Menu shortcut: {ex.Message}");
+                Logger.LogWarning($"Failed to create Start Menu shortcut: {ex.Message}");
             }
         }
 
@@ -93,7 +94,7 @@ namespace ClipTyper
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to set autostart: {ex.Message}");
+                Logger.LogWarning($"Failed to set autostart: {ex.Message}");
             }
         }
 
