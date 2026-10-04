@@ -48,7 +48,7 @@ Because ClipTyper calls native Windows APIs (`SendInput`, `RegisterHotKey`, `Att
 ClipTyper is 100% open-source C# with no obfuscation. We encourage security teams and administrators to review and build the source code directly:
 * Reproducible build instructions are available in [CONTRIBUTING.md](CONTRIBUTING.md).
 * Cryptographic release checksums (`SHA256SUMS.txt`) are provided with every GitHub release.
-* VirusTotal (latest installer, v1.6.1): [0 detections / 68 engines](https://www.virustotal.com/gui/file/aa6c70205c1ef8568db390cdfe0bbc68f1c7a844f8fd2e94838ec3c5bba28e73) (`aa6c70205c1ef8568db390cdfe0bbc68f1c7a844f8fd2e94838ec3c5bba28e73`). Re-scan after each release; unsigned `SendInput` utilities can still trigger heuristic detections that are not malware.
+* VirusTotal (latest installer, v1.7.0): [1 detection / 69 engines](https://www.virustotal.com/gui/file/bbaa17b32de4b381edbe98277b0a0a342331947b2e0f96c47d19276545a25c4c) (`bbaa17b32de4b381edbe98277b0a0a342331947b2e0f96c47d19276545a25c4c`). Microsoft flags it as `Trojan:Win32/Wacatac.C!ml`; the other 68 completed engines do not. Re-scan after each release; unsigned `SendInput` utilities can still trigger heuristic detections that are not malware.
 
 ---
 
