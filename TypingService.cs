@@ -122,7 +122,7 @@ namespace ClipTyper
             if (string.IsNullOrEmpty(textToType))
             {
                 Logger.LogInfo("Clip-type trigger ignored: clipboard contains no usable text.");
-                PostToUI(() => ClipboardEmpty?.Invoke());
+                PostToUISync(() => ClipboardEmpty?.Invoke());
                 return;
             }
 
@@ -182,7 +182,7 @@ namespace ClipTyper
                 isCancelRequested: () => _cts?.IsCancellationRequested == true
             );
 
-            PostToUI(() =>
+            PostToUISync(() =>
             {
                 ProgressChanged?.Invoke(false, 0, 0);
                 TypingCompleted?.Invoke(result == TypeResult.Completed);
@@ -225,7 +225,7 @@ namespace ClipTyper
 
             if (r1 != TypeResult.Completed)
             {
-                PostToUI(() =>
+                PostToUISync(() =>
                 {
                     ProgressChanged?.Invoke(false, 0, 0);
                     TypingCompleted?.Invoke(false);
@@ -278,13 +278,13 @@ namespace ClipTyper
                 isCancelRequested: () => _cts?.IsCancellationRequested == true
             );
 
-            PostToUI(() =>
+            PostToUISync(() =>
             {
                 ProgressChanged?.Invoke(false, 0, 0);
                 TypingCompleted?.Invoke(r2 == TypeResult.Completed);
             });
 
-            HandleTypingResult(r2, totalChars, settings);
+            HandleTypingResult(r2, totalChars, settings, logCharacterCount: false);
 
             // ── Optional Auto-Clear of Clipboard ──
             if (r2 == TypeResult.Completed && settings.CredentialAutoClearClipboard)
@@ -293,7 +293,7 @@ namespace ClipTyper
             }
         }
 
-        private void HandleTypingResult(TypeResult result, int charCount, AppSettings settings)
+        private void HandleTypingResult(TypeResult result, int charCount, AppSettings settings, bool logCharacterCount = true)
         {
             if (result == TypeResult.Completed)
             {
@@ -301,7 +301,15 @@ namespace ClipTyper
                 {
                     try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
                 }
-                Logger.LogInfo($"Successfully typed {charCount} characters.");
+
+                if (logCharacterCount)
+                {
+                    Logger.LogInfo($"Successfully typed {charCount} characters.");
+                }
+                else
+                {
+                    Logger.LogInfo("Credential auto-type finished.");
+                }
             }
             else if (result == TypeResult.FocusLost)
             {

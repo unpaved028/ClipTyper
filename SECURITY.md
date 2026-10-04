@@ -37,7 +37,7 @@ Windows prevents lower-integrity applications from sending input messages to hig
 When using two-stage credential typing:
 1. ClipTyper performs an active focus verification check between Stage 1 (Username) and Stage 2 (Password) to ensure focus was not stolen.
 2. Trailing line terminators are trimmed from the password stage to prevent unintended form submission.
-3. An optional post-type clipboard auto-clear feature is available to immediately purge sensitive passwords from the Windows clipboard after typing.
+3. An optional post-type clipboard auto-clear can wipe the clipboard after credential typing. It is off by default. When enabled, ClipTyper waits the configured delay before clearing (default 5 seconds, allowed range 1–60 seconds).
 
 ---
 

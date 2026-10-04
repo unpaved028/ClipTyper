@@ -14,7 +14,7 @@ If you believe you have found a security vulnerability, please refer to our [SEC
 Since ClipTyper interacts with the Windows API and relies on `SendInput`, we encourage everyone to compile the tool themselves for maximum transparency and security.
 
 ### Prerequisites
-* [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+* [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 > [!NOTE]
 > **Build Troubleshooting (TD-63):** If ClipTyper is currently running in your system tray or as a background process, make sure to **Exit** it before building locally to prevent file locking errors (`MSB3027`).
@@ -27,19 +27,19 @@ Always verify that all automated unit tests pass before submitting changes:
 dotnet test ClipTyper.sln -c Release
 ```
 
-#### 2. Slim Build (Framework-Dependent, ~1.5 MB)
-Requires .NET 8 Desktop Runtime installed on the host machine:
+#### 2. Slim Build (Framework-Dependent, ~540 KB)
+Requires .NET 10 Desktop Runtime installed on the host machine:
 ```cmd
 dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true
 ```
 
-#### 3. Portable Build (Self-Contained, ~45 MB)
+#### 3. Portable Build (Self-Contained, ~50 MB)
 Fully self-contained single-file executable with zero runtime dependencies:
 ```cmd
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:EnableCompressionInSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
-The resulting `ClipTyper.exe` will be located in `bin/Release/net8.0-windows/win-x64/publish/`.
+The resulting `ClipTyper.exe` will be located in `bin/Release/net10.0-windows/win-x64/publish/`.
 
 ## 🚀 Pull Requests
 1. Fork the repository and create your branch from `master`.

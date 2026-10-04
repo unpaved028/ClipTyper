@@ -6,8 +6,7 @@ using System.Windows.Forms;
 namespace ClipTyper
 {
     /// <summary>
-    /// Settings dialog with categorized groups: Hotkey recorder, keystroke delay & formatting,
-    /// safety & target compatibility, credential auto-type, overlay configuration, and autostart.
+    /// Settings dialog with three tabs: Typing, Overlay, and App.
     /// </summary>
     public class SettingsForm : Form
     {
@@ -116,55 +115,29 @@ namespace ClipTyper
             StartPosition = FormStartPosition.CenterScreen;
             ShowInTaskbar = false;
             KeyPreview = true;
-            AutoScroll = true;
+            AutoScroll = false;
 
-            int y = 12;
-            int groupWidth = 400;
-
-            // ── 1. Hotkeys Group ────────────────────────────────────
-            var hotkeyGroup = new GroupBox
+            var tabs = new TabControl
             {
-                Text = "Hotkeys",
-                Location = new Point(12, y),
-                Size = new Size(groupWidth, 135)
+                Location = new Point(12, 12),
+                Size = new Size(424, 420)
             };
+            var typingPage = new TabPage("Typing") { AutoScroll = true };
+            var overlayPage = new TabPage("Overlay") { AutoScroll = true };
+            var appPage = new TabPage("App") { AutoScroll = true };
 
-            var hotkeyLabel = new Label { Text = "Type Clipboard:", Location = new Point(12, 25), AutoSize = true };
-            _hotkeyBox = new TextBox { Location = new Point(170, 22), Size = new Size(210, 23), ReadOnly = true, BackColor = SystemColors.Window };
+            var hotkeyLabel = new Label { Text = "Type Clipboard:", Location = new Point(12, 16), AutoSize = true };
+            _hotkeyBox = new TextBox { Location = new Point(150, 13), Size = new Size(250, 23), ReadOnly = true, BackColor = SystemColors.Window };
             _hotkeyBox.GotFocus += (_, _) => StartRecording(RecordingTarget.TriggerHotkey, _hotkeyBox);
+            var hotkeyHint = new Label { Text = "Click a box and press keys to record.", Location = new Point(12, 42), ForeColor = Color.Gray, AutoSize = true };
 
-            var toggleHotkeyLabel = new Label { Text = "Toggle Overlay:", Location = new Point(12, 55), AutoSize = true };
-            _toggleHotkeyBox = new TextBox { Location = new Point(170, 52), Size = new Size(210, 23), ReadOnly = true, BackColor = SystemColors.Window };
-            _toggleHotkeyBox.GotFocus += (_, _) => StartRecording(RecordingTarget.ToggleHotkey, _toggleHotkeyBox);
-
-            _toggleHotkeyEnableCheckbox = new CheckBox
-            {
-                Text = "Enable overlay toggle hotkey",
-                Location = new Point(12, 80),
-                AutoSize = true
-            };
-
-            var hotkeyHint = new Label { Text = "Click a box and press keys to record.", Location = new Point(12, 106), ForeColor = Color.Gray, AutoSize = true };
-
-            hotkeyGroup.Controls.AddRange(new Control[] { hotkeyLabel, _hotkeyBox, toggleHotkeyLabel, _toggleHotkeyBox, _toggleHotkeyEnableCheckbox, hotkeyHint });
-            Controls.Add(hotkeyGroup);
-            y += 145;
-
-            // ── 2. Typing & Formatting Group ────────────────────────
-            var typingGroup = new GroupBox
-            {
-                Text = "Typing & Formatting",
-                Location = new Point(12, y),
-                Size = new Size(groupWidth, 160)
-            };
-
-            var delayCaption = new Label { Text = "Keystroke Delay:", Location = new Point(12, 25), AutoSize = true };
-            _delaySlider = new TrackBar { Location = new Point(130, 18), Size = new Size(190, 45), Minimum = 5, Maximum = 100, TickFrequency = 5, SmallChange = 5, LargeChange = 10 };
+            var delayCaption = new Label { Text = "Keystroke Delay:", Location = new Point(12, 76), AutoSize = true };
+            _delayLabel = new Label { Text = "25 ms", Location = new Point(360, 76), AutoSize = true };
+            _delaySlider = new TrackBar { Location = new Point(140, 68), Size = new Size(210, 45), Minimum = 5, Maximum = 100, TickFrequency = 5, SmallChange = 5, LargeChange = 10 };
             _delaySlider.ValueChanged += (_, _) => { _delayLabel.Text = $"{_delaySlider.Value} ms"; };
-            _delayLabel = new Label { Text = "25 ms", Location = new Point(330, 25), AutoSize = true };
 
-            var newlineLabel = new Label { Text = "Newline Handling:", Location = new Point(12, 65), AutoSize = true };
-            _newlineComboBox = new ComboBox { Location = new Point(135, 62), Size = new Size(245, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            var newlineLabel = new Label { Text = "Newline Handling:", Location = new Point(12, 120), AutoSize = true };
+            _newlineComboBox = new ComboBox { Location = new Point(150, 117), Size = new Size(250, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             _newlineComboBox.Items.AddRange(new object[]
             {
                 "Enter (Default)",
@@ -176,52 +149,125 @@ namespace ClipTyper
             _enforcePlainTextCheckbox = new CheckBox
             {
                 Text = "Plain-Text Mode (prefer Unicode plain-text format)",
-                Location = new Point(12, 98),
-                Size = new Size(370, 20)
+                Location = new Point(12, 152),
+                Size = new Size(390, 20)
             };
 
             _jitterCheckbox = new CheckBox
             {
                 Text = "Humanized jitter:",
-                Location = new Point(12, 126),
+                Location = new Point(12, 180),
                 AutoSize = true
             };
             _jitterRangeInput = new NumericUpDown
             {
-                Location = new Point(135, 124),
+                Location = new Point(150, 178),
                 Size = new Size(50, 23),
                 Minimum = 1,
                 Maximum = 50,
                 Value = 5,
                 Enabled = false
             };
-            var jitterMsLabel = new Label { Text = "± ms variance", Location = new Point(190, 126), AutoSize = true };
-
+            var jitterMsLabel = new Label { Text = "± ms variance", Location = new Point(208, 180), AutoSize = true };
             _jitterCheckbox.CheckedChanged += (_, _) =>
             {
                 _jitterRangeInput.Enabled = _jitterCheckbox.Checked;
             };
 
-            typingGroup.Controls.AddRange(new Control[]
+            _vkModeCheckbox = new CheckBox
             {
+                Text = "VK Compatibility Mode (iLO / iDRAC, Teams / RDP)",
+                Location = new Point(12, 212),
+                AutoSize = true
+            };
+
+            _sanitizeInputCheckbox = new CheckBox
+            {
+                Text = "Sanitize text (remove BOM, null-bytes & invisible chars)",
+                Location = new Point(12, 240),
+                Size = new Size(390, 20),
+                Checked = true
+            };
+
+            _maxLenEnableCheckbox = new CheckBox
+            {
+                Text = "Confirm before typing text >",
+                Location = new Point(12, 272),
+                AutoSize = true,
+                Checked = true
+            };
+            _maxLenInput = new NumericUpDown { Location = new Point(210, 270), Size = new Size(75, 23), Minimum = 100, Maximum = 500000, Value = 5000, Increment = 500 };
+            var maxLenCharsLabel = new Label { Text = "chars", Location = new Point(292, 272), AutoSize = true };
+            _maxLenEnableCheckbox.CheckedChanged += (_, _) =>
+            {
+                _maxLenInput.Enabled = _maxLenEnableCheckbox.Checked;
+            };
+
+            typingPage.Controls.AddRange(new Control[]
+            {
+                hotkeyLabel, _hotkeyBox, hotkeyHint,
                 delayCaption, _delaySlider, _delayLabel,
                 newlineLabel, _newlineComboBox,
                 _enforcePlainTextCheckbox,
-                _jitterCheckbox, _jitterRangeInput, jitterMsLabel
+                _jitterCheckbox, _jitterRangeInput, jitterMsLabel,
+                _vkModeCheckbox,
+                _sanitizeInputCheckbox,
+                _maxLenEnableCheckbox, _maxLenInput, maxLenCharsLabel
             });
-            Controls.Add(typingGroup);
-            y += 170;
 
-            // ── 3. Credential Auto-Type Group ───────────────────────
-            var credGroup = new GroupBox
+            _overlayCheckbox = new CheckBox { Text = "Show Overlay Button", Location = new Point(12, 16), AutoSize = true };
+            var toggleHotkeyLabel = new Label { Text = "Toggle Overlay:", Location = new Point(12, 52), AutoSize = true };
+            _toggleHotkeyBox = new TextBox { Location = new Point(150, 49), Size = new Size(250, 23), ReadOnly = true, BackColor = SystemColors.Window };
+            _toggleHotkeyBox.GotFocus += (_, _) => StartRecording(RecordingTarget.ToggleHotkey, _toggleHotkeyBox);
+            var toggleHint = new Label { Text = "Click a box and press keys to record.", Location = new Point(12, 78), ForeColor = Color.Gray, AutoSize = true };
+            _toggleHotkeyEnableCheckbox = new CheckBox
             {
-                Text = "Credential Auto-Type (Two-Stage Login)",
-                Location = new Point(12, y),
-                Size = new Size(groupWidth, 195)
+                Text = "Enable overlay toggle hotkey",
+                Location = new Point(12, 104),
+                AutoSize = true
+            };
+            _toggleHotkeyEnableCheckbox.CheckedChanged += (_, _) =>
+            {
+                _toggleHotkeyBox.Enabled = _toggleHotkeyEnableCheckbox.Checked;
             };
 
-            var credModeLabel = new Label { Text = "Mode:", Location = new Point(12, 25), AutoSize = true };
-            _credModeComboBox = new ComboBox { Location = new Point(135, 22), Size = new Size(245, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            var scaleLabelCaption = new Label { Text = "Scale:", Location = new Point(12, 144), AutoSize = true };
+            _scaleLabel = new Label { Text = "100%", Location = new Point(360, 144), AutoSize = true };
+            _scaleSlider = new TrackBar { Location = new Point(80, 136), Size = new Size(270, 45), Minimum = 25, Maximum = 200, TickFrequency = 25, SmallChange = 5, LargeChange = 25 };
+            _scaleSlider.ValueChanged += (_, _) =>
+            {
+                _scaleLabel.Text = $"{_scaleSlider.Value}%";
+                LiveScaleChanged?.Invoke(_scaleSlider.Value);
+            };
+
+            var monitorLabelCaption = new Label { Text = "Monitor:", Location = new Point(12, 192), AutoSize = true };
+            _monitorComboBox = new ComboBox { Location = new Point(80, 189), Size = new Size(270, 23), DropDownStyle = ComboBoxStyle.DropDownList };
+            for (int i = 0; i < Screen.AllScreens.Length; i++)
+            {
+                var screen = Screen.AllScreens[i];
+                string name = $"Monitor {i + 1}" + (screen.Primary ? " (Primary)" : "");
+                _monitorComboBox.Items.Add(name);
+            }
+
+            _resetPositionBtn = new Button { Text = "Reset Position", Location = new Point(12, 228), Size = new Size(110, 24) };
+
+            overlayPage.Controls.AddRange(new Control[]
+            {
+                _overlayCheckbox,
+                toggleHotkeyLabel, _toggleHotkeyBox, toggleHint, _toggleHotkeyEnableCheckbox,
+                scaleLabelCaption, _scaleSlider, _scaleLabel,
+                monitorLabelCaption, _monitorComboBox, _resetPositionBtn
+            });
+
+            var credGroup = new GroupBox
+            {
+                Text = "Credential Auto-Type",
+                Location = new Point(8, 8),
+                Size = new Size(392, 196)
+            };
+
+            var credModeLabel = new Label { Text = "Mode:", Location = new Point(12, 28), AutoSize = true };
+            _credModeComboBox = new ComboBox { Location = new Point(130, 25), Size = new Size(245, 23), DropDownStyle = ComboBoxStyle.DropDownList };
             _credModeComboBox.Items.AddRange(new object[]
             {
                 "Disabled (Normal typing)",
@@ -231,28 +277,28 @@ namespace ClipTyper
                 "Custom Delimiter"
             });
 
-            var customDelimLabel = new Label { Text = "Custom Delim / Key:", Location = new Point(12, 58), AutoSize = true };
-            _customDelimiterBox = new TextBox { Location = new Point(135, 55), Size = new Size(115, 23), Enabled = false };
-            _customTransitionComboBox = new ComboBox { Location = new Point(255, 55), Size = new Size(125, 23), DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
+            var customDelimLabel = new Label { Text = "Custom Delim / Key:", Location = new Point(12, 60), AutoSize = true };
+            _customDelimiterBox = new TextBox { Location = new Point(130, 57), Size = new Size(110, 23), Enabled = false };
+            _customTransitionComboBox = new ComboBox { Location = new Point(248, 57), Size = new Size(127, 23), DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
             _customTransitionComboBox.Items.AddRange(new object[] { "Send Tab", "Send Enter" });
 
-            var stageDelayLabel = new Label { Text = "Stage Pause:", Location = new Point(12, 90), AutoSize = true };
-            _stageDelayInput = new NumericUpDown { Location = new Point(135, 88), Size = new Size(70, 23), Minimum = 50, Maximum = 2000, Value = 200, Increment = 50 };
-            var msLabel = new Label { Text = "ms between user & pass", Location = new Point(210, 90), AutoSize = true };
+            var stageDelayLabel = new Label { Text = "Stage Pause:", Location = new Point(12, 94), AutoSize = true };
+            _stageDelayInput = new NumericUpDown { Location = new Point(130, 92), Size = new Size(70, 23), Minimum = 50, Maximum = 2000, Value = 200, Increment = 50 };
+            var msLabel = new Label { Text = "ms between user & pass", Location = new Point(208, 94), AutoSize = true };
 
             _autoClearCheckbox = new CheckBox
             {
                 Text = "Auto-clear clipboard after typing in",
-                Location = new Point(12, 122),
+                Location = new Point(12, 124),
                 AutoSize = true
             };
-            _autoClearDelayInput = new NumericUpDown { Location = new Point(235, 120), Size = new Size(50, 23), Minimum = 1, Maximum = 60, Value = 5, Enabled = false };
-            var secLabel = new Label { Text = "seconds", Location = new Point(290, 122), AutoSize = true };
+            _autoClearDelayInput = new NumericUpDown { Location = new Point(248, 122), Size = new Size(50, 23), Minimum = 1, Maximum = 60, Value = 5, Enabled = false };
+            var secLabel = new Label { Text = "seconds", Location = new Point(304, 124), AutoSize = true };
 
             _autoClearWarningLabel = new Label
             {
-                Text = "⚠ Erases credentials from clipboard after delay.",
-                Location = new Point(12, 152),
+                Text = "Erases credentials from clipboard after the delay.",
+                Location = new Point(12, 156),
                 ForeColor = Color.DarkOrange,
                 AutoSize = true,
                 Visible = false
@@ -279,163 +325,61 @@ namespace ClipTyper
                 _autoClearCheckbox, _autoClearDelayInput, secLabel,
                 _autoClearWarningLabel
             });
-            Controls.Add(credGroup);
-            y += 205;
-
-            // ── 4. Safety & Compatibility Group ─────────────────────
-            var safetyGroup = new GroupBox
-            {
-                Text = "Safety & Diagnostics",
-                Location = new Point(12, y),
-                Size = new Size(groupWidth, 168)
-            };
-
-            _sanitizeInputCheckbox = new CheckBox
-            {
-                Text = "Sanitize text (remove BOM, null-bytes & invisible chars)",
-                Location = new Point(12, 22),
-                Size = new Size(375, 20),
-                Checked = true
-            };
-
-            _maxLenEnableCheckbox = new CheckBox
-            {
-                Text = "Confirm before typing text >",
-                Location = new Point(12, 48),
-                AutoSize = true,
-                Checked = true
-            };
-
-            _maxLenInput = new NumericUpDown { Location = new Point(210, 46), Size = new Size(75, 23), Minimum = 100, Maximum = 500000, Value = 5000, Increment = 500 };
-            var maxLenCharsLabel = new Label { Text = "chars", Location = new Point(290, 48), AutoSize = true };
-
-            _maxLenEnableCheckbox.CheckedChanged += (_, _) =>
-            {
-                _maxLenInput.Enabled = _maxLenEnableCheckbox.Checked;
-            };
-
-            _vkModeCheckbox = new CheckBox
-            {
-                Text = "VK Compatibility Mode (for Teams screen control / RDP)",
-                Location = new Point(12, 78),
-                Size = new Size(375, 20)
-            };
 
             _soundFeedbackCheckbox = new CheckBox
             {
                 Text = "Play sound signal when typing completes",
-                Location = new Point(12, 108),
-                Size = new Size(375, 20)
+                Location = new Point(12, 216),
+                Size = new Size(390, 20)
             };
-
             _loggingCheckbox = new CheckBox
             {
                 Text = "Enable diagnostic logging (clip-typer.log)",
-                Location = new Point(12, 138),
-                Size = new Size(375, 20),
+                Location = new Point(12, 244),
+                Size = new Size(390, 20),
                 Checked = true
             };
 
-            safetyGroup.Controls.AddRange(new Control[]
-            {
-                _sanitizeInputCheckbox,
-                _maxLenEnableCheckbox, _maxLenInput, maxLenCharsLabel,
-                _vkModeCheckbox,
-                _soundFeedbackCheckbox,
-                _loggingCheckbox
-            });
-            Controls.Add(safetyGroup);
-            y += 178;
-
-            // ── 5. Overlay Group ────────────────────────────────────
-            var overlayGroup = new GroupBox
-            {
-                Text = "Overlay",
-                Location = new Point(12, y),
-                Size = new Size(groupWidth, 160)
-            };
-
-            _overlayCheckbox = new CheckBox { Text = "Show Overlay Button", Location = new Point(12, 25), AutoSize = true };
-            var scaleLabelCaption = new Label { Text = "Scale:", Location = new Point(12, 58), AutoSize = true };
-            _scaleSlider = new TrackBar { Location = new Point(80, 52), Size = new Size(230, 45), Minimum = 25, Maximum = 200, TickFrequency = 25, SmallChange = 5, LargeChange = 25 };
-            _scaleSlider.ValueChanged += (_, _) =>
-            {
-                _scaleLabel.Text = $"{_scaleSlider.Value}%";
-                LiveScaleChanged?.Invoke(_scaleSlider.Value);
-            };
-            _scaleLabel = new Label { Text = "100%", Location = new Point(320, 58), AutoSize = true };
-
-            var monitorLabelCaption = new Label { Text = "Monitor:", Location = new Point(12, 98), AutoSize = true };
-            _monitorComboBox = new ComboBox { Location = new Point(80, 95), Size = new Size(230, 23), DropDownStyle = ComboBoxStyle.DropDownList };
-            for (int i = 0; i < Screen.AllScreens.Length; i++)
-            {
-                var screen = Screen.AllScreens[i];
-                string name = $"Monitor {i + 1}" + (screen.Primary ? " (Primary)" : "");
-                _monitorComboBox.Items.Add(name);
-            }
-
-            _resetPositionBtn = new Button { Text = "Reset Position", Location = new Point(12, 128), Size = new Size(110, 24) };
-
-            overlayGroup.Controls.AddRange(new Control[]
-            {
-                _overlayCheckbox, scaleLabelCaption, _scaleSlider, _scaleLabel,
-                monitorLabelCaption, _monitorComboBox, _resetPositionBtn
-            });
-            Controls.Add(overlayGroup);
-            y += 170;
-
-            // ── 6. Startup Group ────────────────────────────────────
+            int appY = 272;
             if (!SettingsManager.IsPortable)
             {
-                var autostartGroup = new GroupBox
-                {
-                    Text = "Startup",
-                    Location = new Point(12, y),
-                    Size = new Size(groupWidth, 50)
-                };
-
                 _autostartCheckbox = new CheckBox
                 {
                     Text = "Run ClipTyper at Windows startup",
-                    Location = new Point(12, 20),
+                    Location = new Point(12, appY),
                     AutoSize = true
                 };
-
-                autostartGroup.Controls.Add(_autostartCheckbox);
-                Controls.Add(autostartGroup);
-                y += 60;
+                appPage.Controls.Add(_autostartCheckbox);
+                appY += 28;
             }
-
-            // ── 7. Updates Group ────────────────────────────────────
-            var updatesGroup = new GroupBox
-            {
-                Text = "Updates",
-                Location = new Point(12, y),
-                Size = new Size(groupWidth, 50)
-            };
 
             _autoUpdateCheckbox = new CheckBox
             {
                 Text = "Automatically check for updates",
-                Location = new Point(12, 20),
+                Location = new Point(12, appY),
                 AutoSize = true
             };
 
-            updatesGroup.Controls.Add(_autoUpdateCheckbox);
-            Controls.Add(updatesGroup);
-            y += 60;
+            appPage.Controls.Add(credGroup);
+            appPage.Controls.Add(_soundFeedbackCheckbox);
+            appPage.Controls.Add(_loggingCheckbox);
+            appPage.Controls.Add(_autoUpdateCheckbox);
 
-            // ── Buttons ─────────────────────────────────────────────
-            _saveBtn = new Button { Text = "Save", Location = new Point(230, y), Size = new Size(85, 28) };
+            tabs.TabPages.Add(typingPage);
+            tabs.TabPages.Add(overlayPage);
+            tabs.TabPages.Add(appPage);
+            Controls.Add(tabs);
+
+            _saveBtn = new Button { Text = "Save", Location = new Point(254, 444), Size = new Size(85, 28) };
             _saveBtn.Click += OnSave;
 
-            _cancelBtn = new Button { Text = "Cancel", Location = new Point(325, y), Size = new Size(85, 28), DialogResult = DialogResult.Cancel };
+            _cancelBtn = new Button { Text = "Cancel", Location = new Point(347, 444), Size = new Size(85, 28), DialogResult = DialogResult.Cancel };
 
             Controls.AddRange(new Control[] { _saveBtn, _cancelBtn });
             AcceptButton = _saveBtn;
             CancelButton = _cancelBtn;
 
-            ClientSize = new Size(424, y + 45);
+            ClientSize = new Size(448, 488);
         }
 
         private void StartRecording(RecordingTarget target, TextBox box)
@@ -458,6 +402,7 @@ namespace ClipTyper
             _recordedToggleKey = (Keys)s.OverlayToggleKey;
             _toggleHotkeyBox.Text = FormatHotkey(_recordedToggleModifiers, _recordedToggleKey);
             _toggleHotkeyEnableCheckbox.Checked = s.OverlayToggleEnabled;
+            _toggleHotkeyBox.Enabled = s.OverlayToggleEnabled;
 
             // Keystroke delay & formatting
             _delaySlider.Value = Math.Clamp(s.KeystrokeDelayMs, 5, 100);
@@ -540,8 +485,16 @@ namespace ClipTyper
                     targetBox.Text = FormatHotkey(_recordedToggleModifiers, _recordedToggleKey);
                 }
                 targetBox.BackColor = SystemColors.Window;
+                var cancelledTarget = _recordingTarget;
                 _recordingTarget = RecordingTarget.None;
-                _delaySlider.Focus();
+                if (cancelledTarget == RecordingTarget.TriggerHotkey)
+                {
+                    _delaySlider.Focus();
+                }
+                else
+                {
+                    _scaleSlider.Focus();
+                }
                 return true;
             }
 
@@ -604,8 +557,16 @@ namespace ClipTyper
                 targetBox.BackColor = Color.FromArgb(255, 220, 150);
             }
 
+            var completedTarget = _recordingTarget;
             _recordingTarget = RecordingTarget.None;
-            _delaySlider.Focus();
+            if (completedTarget == RecordingTarget.TriggerHotkey)
+            {
+                _delaySlider.Focus();
+            }
+            else
+            {
+                _scaleSlider.Focus();
+            }
             return true;
         }
 

@@ -49,3 +49,8 @@ Roadmap.md
 # WinGet Manifests
 winget-manifest/
 manifests/
+
+# Local listing drafts (keep off the public repo)
+listings/
+media/alternativeto/
+website/

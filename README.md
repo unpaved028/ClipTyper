@@ -75,14 +75,14 @@ winget install unpaved028.ClipTyper
 |---|---|---|---|
 | **Installer** | Non-admin Setup.exe — Start Menu + Autostart | No | **[ClipTyper-Setup.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Setup.exe)** |
 | **Portable** | Self-contained single `.exe` | No | **[ClipTyper-Portable.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Portable.exe)** |
-| **Slim** | ~1.5 MB; needs .NET 8 Desktop Runtime | [Yes](https://dotnet.microsoft.com/download/dotnet/8.0/runtime) | **[ClipTyper-Slim.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Slim.exe)** |
+| **Slim** | ~540 KB; needs .NET 10 Desktop Runtime | [Yes](https://dotnet.microsoft.com/download/dotnet/10.0) | **[ClipTyper-Slim.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Slim.exe)** |
 
 Not sure? Use the **Installer**.
 
 Integrity:
 - Checksums: [`SHA256SUMS.txt`](https://github.com/unpaved028/ClipTyper/releases/latest) on every release
 - **ClipTyper-Setup.exe (v1.6.1)** SHA-256: `aa6c70205c1ef8568db390cdfe0bbc68f1c7a844f8fd2e94838ec3c5bba28e73`
-- VirusTotal: [**0 detections** / 68 engines](https://www.virustotal.com/gui/file/aa6c70205c1ef8568db390cdfe0bbc68f1c7a844f8fd2e94838ec3c5bba28e73) on the current installer (re-scan after each release; unsigned `SendInput` tools can still trip heuristics later — see [SECURITY.md](SECURITY.md))
+- VirusTotal: [**0 detections** / 68 engines](https://www.virustotal.com/gui/file/aa6c70205c1ef8568db390cdfe0bbc68f1c7a844f8fd2e94838ec3c5bba28e73) on the v1.6.1 installer (re-scan after each release; unsigned `SendInput` tools can still trip heuristics later — see [SECURITY.md](SECURITY.md))
 
 ---
 
@@ -90,7 +90,7 @@ Integrity:
 
 - **Zero telemetry** — no analytics and no product metrics. See [SECURITY.md](SECURITY.md).
 - **Clipboard stays local** — read only when you trigger typing; never written to disk or sent to a server.
-- **Almost offline** — the only network call is an **optional** GitHub Releases update check (off in Settings). No other outbound traffic.
+- **Almost offline** — the only network call is an optional GitHub Releases update check. It is on by default and can be turned off in Settings. No other outbound traffic.
 - **Open source (MIT)** — review the code; verify release checksums.
 - **UIPI respected** — non-elevated ClipTyper will not silently type into Administrator windows.
 
@@ -190,14 +190,21 @@ New-Item -Path ./publish-slim/portable.marker -ItemType File
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o ./publish-winget
 
 # Installer (Inno Setup)
-iscc /DMyAppVersion=1.6.1 setup.iss
+iscc /DMyAppVersion=1.7.0 setup.iss
 ```
 
-Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ---
 
 ## Changelog
+
+### v1.7.0
+- ClipTyper now runs on the current supported .NET release (.NET 10)
+- Settings are organized into Typing, Overlay, and App tabs with streamlined keyboard navigation
+- Credential typing no longer writes how many characters were typed into the local log
+- Clearer configuration for update checks and credential clipboard clearing delay
+- Fully isolated hermetic unit test suite (29/29 tests passing)
 
 ### v1.6.1
 - Stop Typing from tray, overlay menu, or active overlay click

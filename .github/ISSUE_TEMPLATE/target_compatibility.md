@@ -11,7 +11,7 @@ assignees: ''
 - **Target Type / Product:** [e.g. Proxmox 8.2 noVNC, VMware Horizon 2312, Supermicro IPMI Java console, Dell iDRAC 9 HTML5]
 - **Target OS / Shell:** [e.g. Windows Server 2025, Debian 12 TTY, Cisco IOS-XE, VMware ESXi 8]
 - **Client OS:** [e.g. Windows 11 23H2]
-- **ClipTyper Version:** [e.g. 1.6.1]
+- **ClipTyper Version:** [e.g. 1.7.0]
 
 ---
 

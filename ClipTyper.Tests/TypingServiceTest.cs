@@ -92,6 +92,7 @@ namespace ClipTyper.Tests
         }
     }
 
+    [Collection("SettingsState")]
     public class TypingServiceTest
     {
         [Fact]

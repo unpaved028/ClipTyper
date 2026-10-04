@@ -285,11 +285,11 @@ namespace ClipTyper
                             loaded.OverlayScalePercent = Math.Clamp(loaded.OverlayScalePercent, 25, 200);
 
                             // Validate enums (TD-26)
-                            if (!Enum.IsDefined(typeof(NewlineMode), loaded.NewlineHandling))
+                            if (!Enum.IsDefined(loaded.NewlineHandling))
                             {
                                 loaded.NewlineHandling = NewlineMode.Enter;
                             }
-                            if (!Enum.IsDefined(typeof(CredentialMode), loaded.CredentialAutoTypeMode))
+                            if (!Enum.IsDefined(loaded.CredentialAutoTypeMode))
                             {
                                 loaded.CredentialAutoTypeMode = CredentialMode.Off;
                             }

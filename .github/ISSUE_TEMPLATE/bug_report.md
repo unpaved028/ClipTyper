@@ -24,7 +24,7 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots to help explain your problem.
 
 **Environment & Target Details (please complete the following information):**
- - **ClipTyper Version:** [e.g. 1.6.1 (Installer / Portable / Slim)]
+ - **ClipTyper Version:** [e.g. 1.7.0 (Installer / Portable / Slim)]
  - **Host OS:** [e.g. Windows 11 Pro 23H2, Windows 10]
  - **Target Environment:** [e.g. Fullscreen RDP (mstsc), Citrix Workspace, HP iLO 5 HTML5, Proxmox noVNC, AWS Serial Console, MS Teams Control Share, Web Password Field]
  - **Target OS / Host Application:** [e.g. Windows Server 2022, Ubuntu 22.04 shell, Chrome 128, BIOS/UEFI]
