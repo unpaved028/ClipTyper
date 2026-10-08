@@ -82,7 +82,7 @@ Not sure? Use the **Installer**.
 Integrity:
 - Checksums: [`SHA256SUMS.txt`](https://github.com/unpaved028/ClipTyper/releases/latest) on every release
 - **ClipTyper-Setup.exe (v1.7.0)** SHA-256: `bbaa17b32de4b381edbe98277b0a0a342331947b2e0f96c47d19276545a25c4c`
-- VirusTotal: [**1 detection** / 69 engines](https://www.virustotal.com/gui/file/bbaa17b32de4b381edbe98277b0a0a342331947b2e0f96c47d19276545a25c4c) on the v1.7.0 installer. Microsoft is the only hit (`Trojan:Win32/Wacatac.C!ml`); the other completed engines are clean. Unsigned `SendInput` tools can still trip heuristics — see [SECURITY.md](SECURITY.md).
+- VirusTotal: [**0 detections**](https://www.virustotal.com/gui/file/bbaa17b32de4b381edbe98277b0a0a342331947b2e0f96c47d19276545a25c4c) on the v1.7.0 installer (rescan 7 October 2026). 68 engines reported no detection; 2 returned no result. Microsoft does not flag this file. Unsigned `SendInput` tools can still trip heuristics — see [SECURITY.md](SECURITY.md).
 
 ---
 
