@@ -8,13 +8,22 @@ namespace ClipTyper
     /// <summary>
     /// About dialog displaying application version, links, and GitHub update check results.
     /// Extracted from ClipTyperContext to improve modularity (TD-05, TD-06).
+    /// All controls are created up front in auto-sizing panels, so the dialog scales with the
+    /// monitor DPI and grows or shrinks when the update section is shown.
     /// </summary>
     public class AboutForm : Form
     {
-        private readonly Label _infoLabel;
+        private const string WingetUpgradeCommand = "winget upgrade unpaved028.ClipTyper";
+        private const int ContentWidth = 340;
+
         private readonly Button _updateBtn;
         private readonly Label _updateLabel;
-        private readonly Button _closeBtn;
+        private readonly TextBox _notesBox;
+        private readonly LinkLabel _readMoreLink;
+        private readonly FlowLayoutPanel _wingetRow;
+        private readonly Button _copyCmdBtn;
+        private readonly LinkLabel _downloadLink;
+        private string _releaseUrl = "https://github.com/unpaved028/ClipTyper/releases/latest";
 
         public event Action<UpdateChecker.UpdateCheckResult>? UpdateAvailable;
 
@@ -23,13 +32,18 @@ namespace ClipTyper
             bool overlayActive,
             UpdateChecker.UpdateCheckResult? cachedUpdateResult)
         {
+            SuspendLayout();
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
+
             Text = "About ClipTyper";
-            Size = new Size(380, 260);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
             ShowInTaskbar = false;
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
             string version = UpdateChecker.GetCurrentVersion();
 
@@ -52,214 +66,195 @@ namespace ClipTyper
                 triggerInfo = "Configure a hotkey or enable the Overlay in Settings.";
             }
 
-            _infoLabel = new Label
+            var infoLabel = new Label
             {
                 Text = $"ClipTyper v{version}\n\n" +
                        $"{triggerInfo}\n\n" +
                        "The last mile for text that cannot be pasted.\n" +
                        "Types clipboard text reliably into remote consoles & locked fields.",
-                Location = new Point(15, 15),
-                Size = new Size(340, 95),
-                AutoSize = false
+                AutoSize = true,
+                MaximumSize = new Size(ContentWidth, 0),
+                UseMnemonic = false,
+                Margin = new Padding(0, 0, 0, 10)
             };
 
             // ── Links ───────────────────────────────────────────────
-            var repoLink = new LinkLabel
-            {
-                Text = "GitHub Repository",
-                Location = new Point(15, 115),
-                AutoSize = true
-            };
-            repoLink.Click += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper");
+            var repoLink = new LinkLabel { Text = "GitHub Repository", AutoSize = true, Margin = new Padding(0, 0, 24, 0) };
+            repoLink.LinkClicked += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper");
+            var issueLink = new LinkLabel { Text = "Report a Bug", AutoSize = true, Margin = Padding.Empty };
+            issueLink.LinkClicked += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper/issues/new");
+            var linkRow = Row(repoLink, issueLink);
+            linkRow.Margin = new Padding(0, 0, 0, 12);
 
-            var issueLink = new LinkLabel
-            {
-                Text = "Report a Bug",
-                Location = new Point(160, 115),
-                AutoSize = true
-            };
-            issueLink.Click += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper/issues/new");
-
-            // ── Update Check ────────────────────────────────────────
-            _updateBtn = new Button
-            {
-                Text = "Check for Updates",
-                Location = new Point(15, 145),
-                Size = new Size(140, 28)
-            };
+            // ── Update check & close ────────────────────────────────
+            _updateBtn = new Button { Text = "Check for Updates", Size = new Size(140, 28), Margin = new Padding(0, 0, 115, 0) };
+            _updateBtn.Click += OnCheckForUpdatesClick;
+            var closeBtn = new Button { Text = "Close", Size = new Size(85, 28), DialogResult = DialogResult.OK, Margin = Padding.Empty };
+            var buttonRow = Row(_updateBtn, closeBtn);
 
             _updateLabel = new Label
             {
-                Text = "",
-                Location = new Point(15, 180),
-                Size = new Size(340, 22),
-                AutoSize = false
+                AutoSize = true,
+                MaximumSize = new Size(ContentWidth, 0),
+                Margin = new Padding(0, 10, 0, 0),
+                Visible = false
             };
 
-            _updateBtn.Click += async (_, _) =>
+            _notesBox = new TextBox
             {
-                _updateBtn.Enabled = false;
-                _updateBtn.Text = "Checking...";
-                _updateLabel.Text = "";
-                RemoveControlByName("_updateAction");
+                Size = new Size(ContentWidth, 110),
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                BackColor = SystemColors.Control,
+                BorderStyle = BorderStyle.FixedSingle,
+                Margin = new Padding(0, 6, 0, 0),
+                Visible = false
+            };
 
-                var result = await UpdateChecker.CheckAsync();
-                SettingsManager.Current.LastUpdateCheckUtc = DateTime.UtcNow;
-                SettingsManager.Save();
+            _readMoreLink = new LinkLabel { Text = "Read more...", AutoSize = true, Margin = new Padding(0, 4, 0, 0), Visible = false };
+            _readMoreLink.LinkClicked += (_, _) => OpenUrl(_releaseUrl);
 
-                if (result == null)
+            // Installed (Winget) mode: winget command with copy button
+            var cmdLabel = new Label
+            {
+                Text = WingetUpgradeCommand,
+                AutoSize = true,
+                Font = new Font("Consolas", 8.5f),
+                Margin = new Padding(0, 6, 12, 0)
+            };
+            _copyCmdBtn = new Button { Text = "Copy", Size = new Size(80, 24), Margin = Padding.Empty };
+            _copyCmdBtn.Click += (_, _) =>
+            {
+                try
                 {
-                    _updateLabel.Text = "Could not check for updates. Please check your internet connection.";
-                    Size = new Size(380, 260);
+                    Clipboard.SetText(WingetUpgradeCommand);
+                    _copyCmdBtn.Text = "✓ Copied";
                 }
-                else
-                {
-                    if (result.IsUpdateAvailable)
-                    {
-                        UpdateAvailable?.Invoke(result);
-                    }
-                    RenderUpdateResult(result);
-                }
-
-                _updateBtn.Text = "Check for Updates";
-                _updateBtn.Enabled = true;
+                catch { }
             };
+            _wingetRow = Row(cmdLabel, _copyCmdBtn);
+            _wingetRow.Margin = new Padding(0, 8, 0, 0);
+            _wingetRow.Visible = false;
 
-            _closeBtn = new Button
+            // Portable mode: link directly to release page
+            _downloadLink = new LinkLabel { Text = "Download latest release on GitHub", AutoSize = true, Margin = new Padding(0, 8, 0, 0), Visible = false };
+            _downloadLink.LinkClicked += (_, _) => OpenUrl(_releaseUrl);
+
+            var content = new FlowLayoutPanel
             {
-                Text = "Close",
-                Location = new Point(270, 145),
-                Size = new Size(80, 28),
-                DialogResult = DialogResult.OK
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(15),
+                Margin = Padding.Empty
             };
-
-            Controls.AddRange(new Control[]
+            content.Controls.AddRange(new Control[]
             {
-                _infoLabel, repoLink, issueLink,
-                _updateBtn, _updateLabel, _closeBtn
+                infoLabel, linkRow, buttonRow, _updateLabel, _notesBox, _readMoreLink, _wingetRow, _downloadLink
             });
-            AcceptButton = _closeBtn;
+            Controls.Add(content);
+
+            AcceptButton = closeBtn;
+            CancelButton = closeBtn;
 
             // Render cached update result if already known
             if (cachedUpdateResult != null && cachedUpdateResult.IsUpdateAvailable)
             {
                 RenderUpdateResult(cachedUpdateResult);
             }
+
+            ResumeLayout(true);
+        }
+
+        private static FlowLayoutPanel Row(params Control[] controls)
+        {
+            var row = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = Padding.Empty
+            };
+            row.Controls.AddRange(controls);
+            return row;
+        }
+
+        private async void OnCheckForUpdatesClick(object? sender, EventArgs e)
+        {
+            _updateBtn.Enabled = false;
+            _updateBtn.Text = "Checking...";
+            HideUpdateDetails();
+
+            var result = await UpdateChecker.CheckAsync();
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (result == null)
+            {
+                _updateLabel.Text = "Could not check for updates. Please check your internet connection.";
+                _updateLabel.Visible = true;
+            }
+            else
+            {
+                SettingsManager.Current.LastUpdateCheckUtc = DateTime.UtcNow;
+                SettingsManager.Save();
+
+                if (result.IsUpdateAvailable)
+                {
+                    UpdateAvailable?.Invoke(result);
+                }
+                RenderUpdateResult(result);
+            }
+
+            _updateBtn.Text = "Check for Updates";
+            _updateBtn.Enabled = true;
+        }
+
+        private void HideUpdateDetails()
+        {
+            _updateLabel.Visible = false;
+            _notesBox.Visible = false;
+            _readMoreLink.Visible = false;
+            _wingetRow.Visible = false;
+            _downloadLink.Visible = false;
         }
 
         private void RenderUpdateResult(UpdateChecker.UpdateCheckResult result)
         {
-            RemoveControlByName("_updateAction");
+            HideUpdateDetails();
+            _releaseUrl = result.ReleaseUrl;
 
-            if (result.IsUpdateAvailable)
+            if (!result.IsUpdateAvailable)
             {
-                _updateLabel.Text = $"Update available: v{result.LatestVersion}";
-                int currentY = 205;
+                _updateLabel.Text = $"ClipTyper is up to date (v{result.CurrentVersion}).";
+                _updateLabel.Visible = true;
+                return;
+            }
 
-                // Display release notes snippet if present
-                if (!string.IsNullOrWhiteSpace(result.ReleaseNotes))
-                {
-                    string notes = result.ReleaseNotes.Trim();
-                    if (notes.Length > 300)
-                    {
-                        notes = notes.Substring(0, 300).TrimEnd() + "...";
-                    }
+            _updateLabel.Text = $"Update available: v{result.LatestVersion}";
+            _updateLabel.Visible = true;
 
-                    var notesBox = new TextBox
-                    {
-                        Name = "_updateAction",
-                        Text = notes,
-                        Location = new Point(15, currentY),
-                        Size = new Size(335, 70),
-                        Multiline = true,
-                        ReadOnly = true,
-                        ScrollBars = ScrollBars.Vertical,
-                        BackColor = SystemColors.Control,
-                        BorderStyle = BorderStyle.FixedSingle,
-                        Font = new Font("Segoe UI", 8.5f)
-                    };
+            string notes = UpdateChecker.FormatReleaseNotes(result.ReleaseNotes);
+            if (notes.Length > 0)
+            {
+                _notesBox.Text = notes;
+                _notesBox.Visible = true;
+                _readMoreLink.Visible = true;
+            }
 
-                    var readMoreLink = new LinkLabel
-                    {
-                        Name = "_updateAction",
-                        Text = "Read more...",
-                        Location = new Point(15, currentY + 75),
-                        AutoSize = true
-                    };
-                    readMoreLink.Click += (_, _) => OpenUrl(result.ReleaseUrl);
-
-                    Controls.AddRange(new Control[] { notesBox, readMoreLink });
-                    currentY += 98;
-                }
-
-                if (!SettingsManager.IsPortable)
-                {
-                    // Winget mode: show winget command with copy button
-                    string wingetCmd = "winget upgrade unpaved028.ClipTyper";
-                    var cmdLabel = new Label
-                    {
-                        Name = "_updateAction",
-                        Text = wingetCmd,
-                        Location = new Point(15, currentY + 3),
-                        Size = new Size(240, 20),
-                        Font = new Font("Consolas", 8.5f)
-                    };
-
-                    var copyCmdBtn = new Button
-                    {
-                        Name = "_updateAction",
-                        Text = "Copy",
-                        Location = new Point(270, currentY),
-                        Size = new Size(80, 24)
-                    };
-                    copyCmdBtn.Click += (_, _) =>
-                    {
-                        try
-                        {
-                            Clipboard.SetText(wingetCmd);
-                            copyCmdBtn.Text = "✓ Copied";
-                        }
-                        catch { }
-                    };
-
-                    Controls.AddRange(new Control[] { cmdLabel, copyCmdBtn });
-                    currentY += 32;
-                }
-                else
-                {
-                    // Portable mode: link directly to release page
-                    var downloadLink = new LinkLabel
-                    {
-                        Name = "_updateAction",
-                        Text = "Download latest release on GitHub",
-                        Location = new Point(15, currentY + 3),
-                        AutoSize = true
-                    };
-                    downloadLink.Click += (_, _) => OpenUrl(result.ReleaseUrl);
-
-                    Controls.Add(downloadLink);
-                    currentY += 28;
-                }
-
-                Size = new Size(380, currentY + 45);
+            if (SettingsManager.IsPortable)
+            {
+                _downloadLink.Visible = true;
             }
             else
             {
-                _updateLabel.Text = $"ClipTyper is up to date (v{result.CurrentVersion}).";
-                Size = new Size(380, 260);
-            }
-        }
-
-        private void RemoveControlByName(string name)
-        {
-            for (int i = Controls.Count - 1; i >= 0; i--)
-            {
-                if (Controls[i].Name == name)
-                {
-                    var c = Controls[i];
-                    Controls.RemoveAt(i);
-                    c.Dispose();
-                }
+                _copyCmdBtn.Text = "Copy";
+                _wingetRow.Visible = true;
             }
         }
 

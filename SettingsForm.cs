@@ -29,7 +29,6 @@ namespace ClipTyper
         private TrackBar _delaySlider = null!;
         private Label _delayLabel = null!;
         private ComboBox _newlineComboBox = null!;
-        private CheckBox _enforcePlainTextCheckbox = null!;
         private CheckBox _jitterCheckbox = null!;
         private NumericUpDown _jitterRangeInput = null!;
 
@@ -38,6 +37,7 @@ namespace ClipTyper
         private CheckBox _maxLenEnableCheckbox = null!;
         private NumericUpDown _maxLenInput = null!;
         private CheckBox _vkModeCheckbox = null!;
+        private ComboBox _targetLayoutComboBox = null!;
         private CheckBox _soundFeedbackCheckbox = null!;
 
         // Credential Auto-Type (v1.6.0 / v1.6.1)
@@ -108,6 +108,11 @@ namespace ClipTyper
 
         private void InitializeUI()
         {
+            // Coordinates below are 96-DPI pixels; WinForms scales them to the monitor's DPI.
+            SuspendLayout();
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
+
             Text = "Settings";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -146,29 +151,22 @@ namespace ClipTyper
                 "Ignore (Strip newlines)"
             });
 
-            _enforcePlainTextCheckbox = new CheckBox
-            {
-                Text = "Plain-Text Mode (prefer Unicode plain-text format)",
-                Location = new Point(12, 152),
-                Size = new Size(390, 20)
-            };
-
             _jitterCheckbox = new CheckBox
             {
                 Text = "Humanized jitter:",
-                Location = new Point(12, 180),
+                Location = new Point(12, 152),
                 AutoSize = true
             };
             _jitterRangeInput = new NumericUpDown
             {
-                Location = new Point(150, 178),
+                Location = new Point(150, 150),
                 Size = new Size(50, 23),
                 Minimum = 1,
                 Maximum = 50,
                 Value = 5,
                 Enabled = false
             };
-            var jitterMsLabel = new Label { Text = "± ms variance", Location = new Point(208, 180), AutoSize = true };
+            var jitterMsLabel = new Label { Text = "± ms variance", Location = new Point(208, 152), AutoSize = true };
             _jitterCheckbox.CheckedChanged += (_, _) =>
             {
                 _jitterRangeInput.Enabled = _jitterCheckbox.Checked;
@@ -177,14 +175,32 @@ namespace ClipTyper
             _vkModeCheckbox = new CheckBox
             {
                 Text = "VK Compatibility Mode (iLO / iDRAC, Teams / RDP)",
-                Location = new Point(12, 212),
+                Location = new Point(12, 184),
                 AutoSize = true
+            };
+
+            var targetLayoutLabel = new Label { Text = "Target keyboard:", Location = new Point(30, 213), AutoSize = true };
+            _targetLayoutComboBox = new ComboBox { Location = new Point(150, 210), Size = new Size(250, 23), DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
+            foreach (var option in KeyboardLayouts.All)
+            {
+                _targetLayoutComboBox.Items.Add(option);
+            }
+            var targetLayoutHint = new Label
+            {
+                Text = "Layout of the remote console, e.g. English (US) when the server uses a US keyboard.",
+                Location = new Point(30, 236),
+                Size = new Size(370, 30),
+                ForeColor = Color.Gray
+            };
+            _vkModeCheckbox.CheckedChanged += (_, _) =>
+            {
+                _targetLayoutComboBox.Enabled = _vkModeCheckbox.Checked;
             };
 
             _sanitizeInputCheckbox = new CheckBox
             {
-                Text = "Sanitize text (remove BOM, null-bytes & invisible chars)",
-                Location = new Point(12, 240),
+                Text = "Sanitize text (remove BOM, null-bytes && invisible chars)",
+                Location = new Point(12, 272),
                 Size = new Size(390, 20),
                 Checked = true
             };
@@ -192,12 +208,12 @@ namespace ClipTyper
             _maxLenEnableCheckbox = new CheckBox
             {
                 Text = "Confirm before typing text >",
-                Location = new Point(12, 272),
+                Location = new Point(12, 304),
                 AutoSize = true,
                 Checked = true
             };
-            _maxLenInput = new NumericUpDown { Location = new Point(210, 270), Size = new Size(75, 23), Minimum = 100, Maximum = 500000, Value = 5000, Increment = 500 };
-            var maxLenCharsLabel = new Label { Text = "chars", Location = new Point(292, 272), AutoSize = true };
+            _maxLenInput = new NumericUpDown { Location = new Point(210, 302), Size = new Size(75, 23), Minimum = 100, Maximum = 500000, Value = 5000, Increment = 500 };
+            var maxLenCharsLabel = new Label { Text = "chars", Location = new Point(292, 304), AutoSize = true };
             _maxLenEnableCheckbox.CheckedChanged += (_, _) =>
             {
                 _maxLenInput.Enabled = _maxLenEnableCheckbox.Checked;
@@ -208,9 +224,8 @@ namespace ClipTyper
                 hotkeyLabel, _hotkeyBox, hotkeyHint,
                 delayCaption, _delaySlider, _delayLabel,
                 newlineLabel, _newlineComboBox,
-                _enforcePlainTextCheckbox,
                 _jitterCheckbox, _jitterRangeInput, jitterMsLabel,
-                _vkModeCheckbox,
+                _vkModeCheckbox, targetLayoutLabel, _targetLayoutComboBox, targetLayoutHint,
                 _sanitizeInputCheckbox,
                 _maxLenEnableCheckbox, _maxLenInput, maxLenCharsLabel
             });
@@ -297,10 +312,10 @@ namespace ClipTyper
 
             _autoClearWarningLabel = new Label
             {
-                Text = "Erases credentials from clipboard after the delay.",
-                Location = new Point(12, 156),
+                Text = "Erases credentials from clipboard after the delay, unless it changed.\nWindows clipboard history (Win+V) is not cleared.",
+                Location = new Point(12, 152),
+                Size = new Size(372, 34),
                 ForeColor = Color.DarkOrange,
-                AutoSize = true,
                 Visible = false
             };
 
@@ -380,6 +395,7 @@ namespace ClipTyper
             CancelButton = _cancelBtn;
 
             ClientSize = new Size(448, 488);
+            ResumeLayout(false);
         }
 
         private void StartRecording(RecordingTarget target, TextBox box)
@@ -408,7 +424,6 @@ namespace ClipTyper
             _delaySlider.Value = Math.Clamp(s.KeystrokeDelayMs, 5, 100);
             _delayLabel.Text = $"{_delaySlider.Value} ms";
             _newlineComboBox.SelectedIndex = Math.Clamp((int)s.NewlineHandling, 0, 3);
-            _enforcePlainTextCheckbox.Checked = s.EnforcePlainText;
             _jitterCheckbox.Checked = s.EnableTypingJitter;
             _jitterRangeInput.Value = Math.Clamp(s.TypingJitterRangeMs, 1, 50);
             _jitterRangeInput.Enabled = s.EnableTypingJitter;
@@ -443,6 +458,8 @@ namespace ClipTyper
             }
 
             _vkModeCheckbox.Checked = s.EnableVkCompatibilityMode;
+            _targetLayoutComboBox.Enabled = s.EnableVkCompatibilityMode;
+            SelectTargetLayout(s.TargetKeyboardLayout);
             _soundFeedbackCheckbox.Checked = s.SoundFeedbackEnabled;
             _loggingCheckbox.Checked = s.EnableDiagnosticLogging;
 
@@ -462,6 +479,23 @@ namespace ClipTyper
                 _autostartCheckbox.Checked = s.AutoStartEnabled;
             }
             _autoUpdateCheckbox.Checked = s.AutoUpdateCheckEnabled;
+        }
+
+        private void SelectTargetLayout(string klid)
+        {
+            foreach (KeyboardLayoutOption option in _targetLayoutComboBox.Items)
+            {
+                if (string.Equals(option.Klid, klid, StringComparison.OrdinalIgnoreCase))
+                {
+                    _targetLayoutComboBox.SelectedItem = option;
+                    return;
+                }
+            }
+
+            // A valid KLID that is not in the curated list (e.g. edited in settings.json): keep it selectable
+            var custom = new KeyboardLayoutOption(klid, $"Keyboard layout {klid}");
+            _targetLayoutComboBox.Items.Add(custom);
+            _targetLayoutComboBox.SelectedItem = custom;
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -637,7 +671,6 @@ namespace ClipTyper
                 OverlayToggleEnabled = _toggleHotkeyEnableCheckbox.Checked,
                 KeystrokeDelayMs = _delaySlider.Value,
                 NewlineHandling = (NewlineMode)_newlineComboBox.SelectedIndex,
-                EnforcePlainText = _enforcePlainTextCheckbox.Checked,
                 EnableTypingJitter = _jitterCheckbox.Checked,
                 TypingJitterRangeMs = (int)_jitterRangeInput.Value,
                 CredentialAutoTypeMode = (CredentialMode)_credModeComboBox.SelectedIndex,
@@ -649,6 +682,7 @@ namespace ClipTyper
                 SanitizeInput = _sanitizeInputCheckbox.Checked,
                 MaxTextLengthThreshold = _maxLenEnableCheckbox.Checked ? (int)_maxLenInput.Value : 0,
                 EnableVkCompatibilityMode = _vkModeCheckbox.Checked,
+                TargetKeyboardLayout = (_targetLayoutComboBox.SelectedItem as KeyboardLayoutOption)?.Klid ?? KeyboardLayouts.SameAsThisPc,
                 SoundFeedbackEnabled = _soundFeedbackCheckbox.Checked,
                 OverlayEnabled = _overlayCheckbox.Checked,
                 OverlayScalePercent = _scaleSlider.Value,

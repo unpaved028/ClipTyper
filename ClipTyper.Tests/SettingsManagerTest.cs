@@ -97,9 +97,9 @@ namespace ClipTyper.Tests
                 SanitizeInput = false,
                 MaxTextLengthThreshold = 8000,
                 EnableVkCompatibilityMode = true,
+                TargetKeyboardLayout = "00000407",
                 SoundFeedbackEnabled = true,
                 NewlineHandling = NewlineMode.Space,
-                EnforcePlainText = true,
                 CredentialAutoTypeMode = CredentialMode.TabOnly,
                 CredentialCustomDelimiter = "||",
                 CredentialCustomTransitionKey = 0x0D,
@@ -135,9 +135,9 @@ namespace ClipTyper.Tests
                 Assert.False(loaded.SanitizeInput);
                 Assert.Equal(8000, loaded.MaxTextLengthThreshold);
                 Assert.True(loaded.EnableVkCompatibilityMode);
+                Assert.Equal("00000407", loaded.TargetKeyboardLayout);
                 Assert.True(loaded.SoundFeedbackEnabled);
                 Assert.Equal(NewlineMode.Space, loaded.NewlineHandling);
-                Assert.True(loaded.EnforcePlainText);
                 Assert.Equal(CredentialMode.TabOnly, loaded.CredentialAutoTypeMode);
                 Assert.Equal("||", loaded.CredentialCustomDelimiter);
                 Assert.Equal((ushort)0x0D, loaded.CredentialCustomTransitionKey);
@@ -165,6 +165,154 @@ namespace ClipTyper.Tests
                     try { Directory.Delete(tempDir, true); } catch { }
                 }
             }
+        }
+
+        [Theory]
+        // Explicit 100% must survive a restart even though OverlaySize is still written as "Small"
+        [InlineData("{\"OverlaySize\":\"Small\",\"OverlayScalePercent\":100}", 100)]
+        [InlineData("{\"OverlaySize\":\"Large\",\"OverlayScalePercent\":75}", 75)]
+        // Legacy files without OverlayScalePercent are still migrated
+        [InlineData("{\"OverlaySize\":\"Small\"}", 50)]
+        [InlineData("{\"OverlaySize\":\"Medium\"}", 100)]
+        [InlineData("{\"OverlaySize\":\"Large\"}", 200)]
+        // Neither property in the file (e.g. Scoop's initial "{}"): default 100 %, no migration
+        [InlineData("{}", 100)]
+        public void SettingsManager_Load_MigratesLegacyOverlaySizeOnlyWhenScaleIsMissing(string json, int expectedScale)
+        {
+            var before = SettingsManager.Current.Clone();
+            string tempDir = Path.Combine(Path.GetTempPath(), "ClipTyper_Test_" + Guid.NewGuid().ToString("N"));
+            string tempFile = Path.Combine(tempDir, "settings.json");
+
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                File.WriteAllText(tempFile, json);
+                SettingsManager.SetSettingsFileForTesting(tempFile);
+
+                Assert.Equal(expectedScale, SettingsManager.Load().OverlayScalePercent);
+            }
+            finally
+            {
+                SettingsManager.SetSettingsFileForTesting(null);
+                SettingsManager.Current.CopyFrom(before);
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateHardLinkW(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+
+        [Fact]
+        public void SettingsManager_Save_KeepsHardLinkIntact_ForScoopPersist()
+        {
+            var before = SettingsManager.Current.Clone();
+            string tempDir = Path.Combine(Path.GetTempPath(), "ClipTyper_Test_" + Guid.NewGuid().ToString("N"));
+            string persistFile = Path.Combine(tempDir, "persist", "settings.json");
+            string appFile = Path.Combine(tempDir, "app", "settings.json");
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(persistFile)!);
+                Directory.CreateDirectory(Path.GetDirectoryName(appFile)!);
+                File.WriteAllText(persistFile, "{}");
+                Assert.True(CreateHardLinkW(appFile, persistFile, IntPtr.Zero), "could not create hard link");
+
+                SettingsManager.SetSettingsFileForTesting(appFile);
+                SettingsManager.Load();
+                SettingsManager.Current.KeystrokeDelayMs = 77;
+                SettingsManager.Save();
+
+                // The persisted copy (other link) sees the change, and the link still exists
+                Assert.Contains("\"KeystrokeDelayMs\": 77", File.ReadAllText(persistFile), StringComparison.Ordinal);
+                Assert.Equal(2, NativeMethods.GetHardLinkCount(appFile));
+            }
+            finally
+            {
+                SettingsManager.SetSettingsFileForTesting(null);
+                SettingsManager.Current.CopyFrom(before);
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        [Theory]
+        // Saved by a DPI-unaware version: position must be migrated once
+        [InlineData("{\"OverlayX\":2500,\"OverlayY\":600}", true)]
+        // Default position: nothing to migrate
+        [InlineData("{\"OverlayX\":-1,\"OverlayY\":-1}", false)]
+        // Saved by a DPI-aware version
+        [InlineData("{\"OverlayX\":2500,\"OverlayY\":600,\"OverlayPositionDpiAware\":true}", false)]
+        public void SettingsManager_Load_FlagsOverlayPositionsFromDpiUnawareVersions(string json, bool expectMigration)
+        {
+            var before = SettingsManager.Current.Clone();
+            string tempDir = Path.Combine(Path.GetTempPath(), "ClipTyper_Test_" + Guid.NewGuid().ToString("N"));
+            string tempFile = Path.Combine(tempDir, "settings.json");
+
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                File.WriteAllText(tempFile, json);
+                SettingsManager.SetSettingsFileForTesting(tempFile);
+
+                var loaded = SettingsManager.Load();
+
+                Assert.Equal(!expectMigration, loaded.OverlayPositionDpiAware);
+            }
+            finally
+            {
+                SettingsManager.SetSettingsFileForTesting(null);
+                SettingsManager.Current.CopyFrom(before);
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        [Theory]
+        [InlineData("{\"TargetKeyboardLayout\":\"0000040C\"}", "0000040C")]
+        [InlineData("{\"TargetKeyboardLayout\":\"US\"}", "")]
+        [InlineData("{\"TargetKeyboardLayout\":null}", "")]
+        [InlineData("{}", "")]
+        public void SettingsManager_Load_ValidatesTargetKeyboardLayout(string json, string expected)
+        {
+            var before = SettingsManager.Current.Clone();
+            string tempDir = Path.Combine(Path.GetTempPath(), "ClipTyper_Test_" + Guid.NewGuid().ToString("N"));
+            string tempFile = Path.Combine(tempDir, "settings.json");
+
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                File.WriteAllText(tempFile, json);
+                SettingsManager.SetSettingsFileForTesting(tempFile);
+
+                Assert.Equal(expected, SettingsManager.Load().TargetKeyboardLayout);
+            }
+            finally
+            {
+                SettingsManager.SetSettingsFileForTesting(null);
+                SettingsManager.Current.CopyFrom(before);
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        [Theory]
+        [InlineData(@"C:\Tools\ClipTyper-Portable.exe", true)]
+        [InlineData(@"C:\Tools\ClipTyper-Slim.exe", true)]
+        [InlineData(@"C:\Users\me\Downloads\ClipTyper-Portable (1).exe", true)]
+        [InlineData(@"C:\Tools\cliptyper-portable.EXE", true)]
+        [InlineData(@"C:\Users\me\AppData\Local\Programs\ClipTyper\ClipTyper.exe", false)]
+        public void SettingsManager_IsPortableExeName_RecognizesStandaloneReleaseExes(string exePath, bool expected)
+        {
+            Assert.Equal(expected, SettingsManager.IsPortableExeName(exePath));
         }
     }
 }

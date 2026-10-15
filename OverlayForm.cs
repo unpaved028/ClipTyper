@@ -17,7 +17,7 @@ namespace ClipTyper
     public class OverlayForm : Form
     {
         // ── Size & Scale Constants ──────────────────────────────────
-        private const int BaseSize         = 128;  // Base size in pixels (100% scale)
+        private const int BaseSize         = 128;  // Base size in pixels (100% scale at 96 DPI)
         private const int SizeLarge        = 256;  // Size threshold for loading high-res icon
 
         // ── Peek / animation constants ──────────────────────────────
@@ -334,7 +334,8 @@ namespace ClipTyper
 
             _overlayMenu.Items.Add("Hide Overlay", null, (_, _) =>
             {
-                OverlayHidden?.Invoke();
+                // The handler disposes this form and its menu: run it after the click has finished
+                BeginInvoke(new Action(() => OverlayHidden?.Invoke()));
             });
 
             var monitorMenu = new ToolStripMenuItem("Monitor");
@@ -435,6 +436,18 @@ namespace ClipTyper
         {
             var settings = SettingsManager.Current;
 
+            // Positions saved before DPI awareness are logical pixels; on a scaled display they
+            // would land in the wrong place, so start once from the default edge position.
+            if (!settings.OverlayPositionDpiAware)
+            {
+                settings.OverlayPositionDpiAware = true;
+                if (DeviceDpi != 96)
+                {
+                    settings.OverlayX = -1;
+                    settings.OverlayY = -1;
+                }
+            }
+
             if (settings.OverlayX == -1 || settings.OverlayY == -1)
             {
                 MoveToDefaultPosition();
@@ -520,8 +533,8 @@ namespace ClipTyper
         /// </summary>
         public void ApplyScale(int scalePercent)
         {
-            int formSize = (BaseSize * scalePercent) / 100;
-            formSize = Math.Clamp(formSize, 32, 512);
+            int formSize = BaseSize * scalePercent * DeviceDpi / (100 * 96);
+            formSize = Math.Clamp(formSize, 32, 1024);
 
             // Preserve anchor point before resizing
             int oldWidth = Width;
@@ -874,6 +887,13 @@ namespace ClipTyper
             TopMost = true;
         }
 
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            // Moved to a monitor with a different scaling: keep the same visual size
+            ApplyScale(SettingsManager.Current.OverlayScalePercent);
+        }
+
         protected override void OnLocationChanged(EventArgs e)
         {
             base.OnLocationChanged(e);
@@ -959,6 +979,8 @@ namespace ClipTyper
         /// Intercepts WM_MOUSEACTIVATE to return MA_NOACTIVATE, which
         /// tells Windows not to activate this window when it is clicked.
         /// Also handles close messages from Windows / Installer to exit cleanly.
+        /// WM_CLOSE here always means an external shutdown request: the owner hides
+        /// the overlay via Dispose(), never Close(), so hiding does not exit the app.
         /// </summary>
         protected override void WndProc(ref Message m)
         {

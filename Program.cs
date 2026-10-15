@@ -11,6 +11,9 @@ namespace ClipTyper
         [STAThread]
         static void Main()
         {
+            // Crisp UI on scaled displays (125 %, 150 %, ...) instead of bitmap-stretched windows
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+
             const string mutexName = @"Local\ClipTyper_SingleInstance_Mutex";
             _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
 

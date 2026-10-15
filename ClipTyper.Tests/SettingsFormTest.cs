@@ -123,7 +123,6 @@ namespace ClipTyper.Tests
                 current.OverlayToggleEnabled = false;
                 current.KeystrokeDelayMs = 40;
                 current.NewlineHandling = NewlineMode.ShiftEnter;
-                current.EnforcePlainText = true;
                 current.EnableTypingJitter = true;
                 current.TypingJitterRangeMs = 12;
                 current.CredentialAutoTypeMode = CredentialMode.Custom;
@@ -135,6 +134,7 @@ namespace ClipTyper.Tests
                 current.SanitizeInput = false;
                 current.MaxTextLengthThreshold = 8000;
                 current.EnableVkCompatibilityMode = true;
+                current.TargetKeyboardLayout = "0000040C";
                 current.SoundFeedbackEnabled = true;
                 current.OverlayEnabled = true;
                 current.OverlayScalePercent = 150;
@@ -169,7 +169,6 @@ namespace ClipTyper.Tests
                 Assert.False(saved.OverlayToggleEnabled);
                 Assert.Equal(40, saved.KeystrokeDelayMs);
                 Assert.Equal(NewlineMode.ShiftEnter, saved.NewlineHandling);
-                Assert.True(saved.EnforcePlainText);
                 Assert.True(saved.EnableTypingJitter);
                 Assert.Equal(12, saved.TypingJitterRangeMs);
                 Assert.Equal(CredentialMode.Custom, saved.CredentialAutoTypeMode);
@@ -181,6 +180,7 @@ namespace ClipTyper.Tests
                 Assert.False(saved.SanitizeInput);
                 Assert.Equal(8000, saved.MaxTextLengthThreshold);
                 Assert.True(saved.EnableVkCompatibilityMode);
+                Assert.Equal("0000040C", saved.TargetKeyboardLayout);
                 Assert.True(saved.SoundFeedbackEnabled);
                 Assert.True(saved.OverlayEnabled);
                 Assert.Equal(150, saved.OverlayScalePercent);
@@ -189,6 +189,48 @@ namespace ClipTyper.Tests
                 Assert.False(saved.AutoUpdateCheckEnabled);
                 Assert.Equal(new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc), saved.LastUpdateCheckUtc);
                 Assert.False(saved.EnableDiagnosticLogging);
+            }
+            finally
+            {
+                SettingsManager.Current.CopyFrom(before);
+            }
+        }
+
+        [Theory]
+        [InlineData("", "Same as this PC")]
+        [InlineData("00000409", "English (United States)")]
+        [InlineData("00001009", "Keyboard layout 00001009")] // valid KLID outside the curated list
+        public void SettingsForm_TargetKeyboard_ShowsStoredLayout_SavesItBack_AndFollowsVkMode(string klid, string expectedText)
+        {
+            var before = SettingsManager.Current.Clone();
+            try
+            {
+                SettingsManager.Current.EnableVkCompatibilityMode = false;
+                SettingsManager.Current.TargetKeyboardLayout = klid;
+                SettingsManager.Current.CredentialAutoTypeMode = CredentialMode.Off;
+
+                AppSettings? saved = null;
+                RunOnSta(() =>
+                {
+                    using var form = new SettingsForm();
+                    ShowWithoutTakingFocus(form);
+                    form.SettingsSaved += (settings, _) => saved = settings;
+
+                    var typing = form.Controls.OfType<TabControl>().Single().TabPages[0];
+                    var vk = Descendants(typing).OfType<CheckBox>().Single(c => c.Text.Contains("VK Compatibility", StringComparison.Ordinal));
+                    var target = Descendants(typing).OfType<ComboBox>().Single(c => c.Items.OfType<KeyboardLayoutOption>().Any());
+
+                    Assert.Equal(expectedText, target.Text);
+                    Assert.False(target.Enabled);
+                    vk.Checked = true;
+                    Assert.True(target.Enabled);
+
+                    form.Controls.OfType<Button>().Single(b => b.Text == "Save").PerformClick();
+                });
+
+                Assert.NotNull(saved);
+                Assert.Equal(klid, saved.TargetKeyboardLayout);
+                Assert.True(saved.EnableVkCompatibilityMode);
             }
             finally
             {
