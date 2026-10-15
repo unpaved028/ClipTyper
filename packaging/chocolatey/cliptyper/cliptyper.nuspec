@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>cliptyper</id>
+    <version>1.8.0</version>
+    <title>ClipTyper</title>
+    <authors>unpaved028</authors>
+    <!-- Your Chocolatey community account name -->
+    <owners>REPLACE_WITH_CHOCOLATEY_USERNAME</owners>
+    <projectUrl>https://github.com/unpaved028/ClipTyper</projectUrl>
+    <projectSourceUrl>https://github.com/unpaved028/ClipTyper</projectSourceUrl>
+    <packageSourceUrl>https://github.com/unpaved028/ClipTyper/tree/master/packaging/chocolatey</packageSourceUrl>
+    <docsUrl>https://github.com/unpaved028/ClipTyper#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/unpaved028/ClipTyper/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/unpaved028/ClipTyper/blob/master/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <releaseNotes>https://github.com/unpaved028/ClipTyper/releases/tag/v1.8.0</releaseNotes>
+    <tags>cliptyper clipboard keystrokes sendinput paste rdp ilo idrac kvm vmware proxmox hyper-v sysadmin foss</tags>
+    <summary>Types clipboard text as keystrokes where paste is blocked: VM consoles, iLO/iDRAC, KVM-over-IP, RDP and paste-blocked fields.</summary>
+    <description><![CDATA[
+**The last mile for text that cannot be pasted.**
+
+ClipTyper reads the Windows clipboard on a hotkey (default `Ctrl+Alt+V`) or a floating overlay button and types the text as keystrokes into the active window. It is made for places where `Ctrl+V` does not work: VMware vSphere / VMRC, Proxmox noVNC, Hyper-V, Dell iDRAC, HPE iLO, KVM-over-IP, RDP sessions with clipboard redirection disabled, and paste-blocked password fields.
+
+### Features
+- Unicode typing or VK Compatibility Mode with a selectable target keyboard layout (type into a US-layout console from a German PC)
+- Floating overlay button for fullscreen RDP / KVM sessions
+- Credential Auto-Type for user name and password, optional clipboard auto-clear
+- Escape abort, focus-loss protection, configurable delay and newline handling
+- Runs in user space, no administrator rights, zero telemetry
+
+### Package notes
+- Installs for the current user to `%LocalAppData%\Programs\ClipTyper` (the official non-admin installer) and enables start with Windows; this can be turned off in Settings.
+- ClipTyper is not started automatically after a Chocolatey install. Start it from the Start Menu.
+- The executable is not code-signed. Release checksums are published with every GitHub release (`SHA256SUMS.txt`).
+]]></description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

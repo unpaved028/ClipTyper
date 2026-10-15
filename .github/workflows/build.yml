@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD_VERSION: '1.7.0'
+  BUILD_VERSION: '1.8.0'
 
 permissions:
   contents: write
@@ -31,6 +31,12 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
           echo "BUILD_VERSION=$version" >> $env:GITHUB_ENV
+          # A tag with a suffix (v1.8.0-beta1) is a pre-release: published for testers only.
+          # GitHub never returns pre-releases from /releases/latest, which is what the in-app
+          # update check (all installed versions) queries, so users are not asked to update.
+          $isPrerelease = $version.Contains('-')
+          echo "IS_PRERELEASE=$($isPrerelease.ToString().ToLower())" >> $env:GITHUB_ENV
+          echo "NOTES_VERSION=$($version.Split('-')[0])" >> $env:GITHUB_ENV
 
       # ── Automated Unit Tests (TD-24) ───────────────────────────
       - name: Run Unit Tests
@@ -129,12 +135,20 @@ jobs:
         run: |
           $readme = Get-Content -Path README.md -Raw
           $version = "${{ env.BUILD_VERSION }}"
-          $pattern = "(?s)### v" + [regex]::Escape($version) + "\s*\r?\n(.*?)(?=\r?\n###|\r?\n##|$)"
+          # Pre-releases use the changelog of the version they lead up to (v1.8.0-beta1 -> ### v1.8.0)
+          $notesVersion = "${{ env.NOTES_VERSION }}"
+          $pattern = "(?s)### v" + [regex]::Escape($notesVersion) + "\s*\r?\n(.*?)(?=\r?\n###|\r?\n##|$)"
           if ($readme -match $pattern) {
-              $notes = "## What's new in v$version`n`n" + $Matches[1].Trim()
+              if ("${{ env.IS_PRERELEASE }}" -eq "true") {
+                  $notes = "## v$version (test version)`n`n" +
+                           "This is a test version of the upcoming v$notesVersion. It is not offered as an update inside ClipTyper. Please report problems as a GitHub issue.`n`n" +
+                           "## What's new in v$notesVersion`n`n" + $Matches[1].Trim()
+              } else {
+                  $notes = "## What's new in v$version`n`n" + $Matches[1].Trim()
+              }
               Set-Content -Path release_notes.md -Value $notes -Encoding utf8
           } else {
-              Write-Error "Release notes for version v$version not found in README.md under '### v$version'. Please update README.md before tagging."
+              Write-Error "Release notes for version v$notesVersion not found in README.md under '### v$notesVersion'. Please update README.md before tagging."
               exit 1
           }
 
@@ -144,6 +158,8 @@ jobs:
         with:
           body_path: release_notes.md
           generate_release_notes: false
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
+          make_latest: ${{ env.IS_PRERELEASE == 'true' && 'false' || 'true' }}
           files: |
             ./publish-portable/ClipTyper-Portable.exe
             ./publish-portable/portable.marker
@@ -151,3 +167,21 @@ jobs:
             ./publish-winget/ClipTyper.exe
             ./ClipTyper-Setup.exe
             ./SHA256SUMS.txt
+
+      # Safety net: a pre-release must never become "latest", otherwise every installed
+      # ClipTyper would offer it as an update. If it did, demote it and fail the run.
+      - name: Verify pre-release is not the latest release
+        if: startsWith(github.ref, 'refs/tags/v') && env.IS_PRERELEASE == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $release = gh api "repos/${{ github.repository }}/releases/tags/$tag" | ConvertFrom-Json
+          $latest = gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name
+          Write-Host "Release $tag prerelease=$($release.prerelease); latest release is $latest"
+          if (-not $release.prerelease -or $latest -eq $tag) {
+              gh release edit $tag --repo "${{ github.repository }}" --prerelease --latest=false
+              Write-Error "$tag was published as a full or latest release. It has been switched to a pre-release; check the release page."
+              exit 1
+          }
