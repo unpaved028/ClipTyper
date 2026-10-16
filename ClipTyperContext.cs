@@ -160,6 +160,8 @@ namespace ClipTyper
 
             _trayIcon.ContextMenuStrip.Items.Add(_stopTypingMenuItem);
             _trayIcon.ContextMenuStrip.Items.Add(_stopTypingSeparator);
+            TypingModeMenu.AddTo(_trayIcon.ContextMenuStrip);
+            _trayIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
             _trayIcon.ContextMenuStrip.Items.Add("Settings", null, OnSettings);
             _trayIcon.ContextMenuStrip.Items.Add("About", null, OnAbout);
             _trayIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());

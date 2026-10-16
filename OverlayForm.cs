@@ -332,6 +332,10 @@ namespace ClipTyper
             _overlayMenu.Items.Add(_stopTypingMenuItem);
             _overlayMenu.Items.Add(_stopTypingSeparator);
 
+            // Quick switch: in fullscreen RDP / KVM this menu is the only one within reach
+            TypingModeMenu.AddTo(_overlayMenu);
+            _overlayMenu.Items.Add(new ToolStripSeparator());
+
             _overlayMenu.Items.Add("Hide Overlay", null, (_, _) =>
             {
                 // The handler disposes this form and its menu: run it after the click has finished

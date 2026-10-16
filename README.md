@@ -129,6 +129,8 @@ Consoles such as iLO, iDRAC, vSphere/VMRC, or KVM-over-IP pass on key presses, a
 
 Enable **VK Compatibility Mode** in Settings and set **Target keyboard** to the server's layout (for example *English (United States)*). ClipTyper then presses the keys that produce each character on that layout. Characters the layout cannot produce at all (such as `ä` on a US layout) are listed before typing starts, so a password is never typed wrong silently.
 
+Switching between consoles: right-click the tray icon or the overlay button and pick **Keyboard layout** (choosing a layout also turns on VK Compatibility Mode) or toggle **VK Compatibility Mode**. In fullscreen RDP / KVM sessions the overlay menu is the one within reach.
+
 ### Overlay (fullscreen RDP / KVM)
 
 Global hotkeys are often captured by the remote session. Enable **Show Overlay Button** in Settings (or toggle with **`Ctrl + Shift + H`**), hover the edge icon, click to type into the previously focused window.
@@ -208,6 +210,7 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 ### v1.8.0
 - Choose the keyboard layout of the remote console in VK Compatibility Mode, so passwords are typed correctly even when the console uses a different layout (for example a US iLO console from a German PC)
 - Before typing, ClipTyper lists characters that the target keyboard layout cannot produce, instead of typing them wrong
+- Switch VK Compatibility Mode and the keyboard layout directly from the tray menu or the overlay menu, also inside fullscreen remote sessions
 - Characters typed with dead keys (such as ^) or AltGr now come out correctly in VK Compatibility Mode
 - Caps Lock no longer inverts typed letters in VK Compatibility Mode
 - Better compatibility with consoles that read key positions (iLO, iDRAC, VMRC, KVM-over-IP)
