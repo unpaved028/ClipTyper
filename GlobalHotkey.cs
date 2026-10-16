@@ -71,6 +71,7 @@ namespace ClipTyper
         {
             var oldModifier = CurrentModifier;
             var oldKey = CurrentKey;
+            bool wasRegistered = _isRegistered;
 
             Unregister();
 
@@ -79,8 +80,11 @@ namespace ClipTyper
                 return true;
             }
 
-            // Registration failed — restore previous hotkey
-            Register(oldModifier, oldKey);
+            // Registration failed — restore previous hotkey (if there was one)
+            if (wasRegistered)
+            {
+                Register(oldModifier, oldKey);
+            }
             return false;
         }
 

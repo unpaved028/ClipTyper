@@ -80,12 +80,88 @@ namespace ClipTyper
             return SetForegroundWindow(hWnd);
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct BY_HANDLE_FILE_INFORMATION
+        {
+            public uint FileAttributes;
+            public uint CreationTimeLow, CreationTimeHigh;
+            public uint LastAccessTimeLow, LastAccessTimeHigh;
+            public uint LastWriteTimeLow, LastWriteTimeHigh;
+            public uint VolumeSerialNumber;
+            public uint FileSizeHigh, FileSizeLow;
+            public uint NumberOfLinks;
+            public uint FileIndexHigh, FileIndexLow;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle hFile, out BY_HANDLE_FILE_INFORMATION lpFileInformation);
+
+        /// <summary>
+        /// Number of hard links (directory entries) pointing to the file; 1 for a normal file.
+        /// </summary>
+        public static int GetHardLinkCount(string path)
+        {
+            using var handle = System.IO.File.OpenHandle(path, System.IO.FileMode.Open, System.IO.FileAccess.Read,
+                System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete);
+            return GetFileInformationByHandle(handle, out var info) ? (int)info.NumberOfLinks : 1;
+        }
+
+        [DllImport("user32.dll")]
+        internal static extern short GetKeyState(int nVirtKey);
+
+        private const int VK_CAPITAL = 0x14;
+
+        /// <summary>
+        /// Reads the Caps Lock toggle state as the target window's thread sees it. A background
+        /// thread's own key state is not updated by input it does not receive, so it attaches to
+        /// the target thread's input state for the query.
+        /// </summary>
+        public static bool IsCapsLockOn(IntPtr targetHWnd)
+        {
+            uint currentThreadId = GetCurrentThreadId();
+            uint targetThreadId = targetHWnd != IntPtr.Zero ? GetWindowThreadProcessId(targetHWnd, out _) : 0;
+            bool attached = targetThreadId != 0 && targetThreadId != currentThreadId &&
+                            AttachThreadInput(currentThreadId, targetThreadId, true);
+            try
+            {
+                return (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+            }
+            finally
+            {
+                if (attached)
+                {
+                    AttachThreadInput(currentThreadId, targetThreadId, false);
+                }
+            }
+        }
+
         // VK Key mapping P/Invokes for compatibility mode
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        internal static extern short VkKeyScanW(char ch);
+        internal static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        internal static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
+        internal static extern short VkKeyScanExW(char ch, IntPtr dwhkl);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern uint MapVirtualKeyExW(uint uCode, uint uMapType, IntPtr dwhkl);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern int ToUnicodeEx(uint wVirtKey, uint wScanCode, byte[] lpKeyState, [Out] char[] pwszBuff, int cchBuff, uint wFlags, IntPtr dwhkl);
+
+        // Keyboard layout (HKL) P/Invokes for the target keyboard layout
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern IntPtr LoadKeyboardLayoutW(string pwszKLID, uint flags);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool UnloadKeyboardLayout(IntPtr hkl);
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr GetKeyboardLayout(uint idThread);
+
+        [DllImport("user32.dll")]
+        internal static extern int GetKeyboardLayoutList(int nBuff, [Out] IntPtr[]? lpList);
 
         // Process elevation & UIPI P/Invokes
         [DllImport("kernel32.dll", SetLastError = true)]

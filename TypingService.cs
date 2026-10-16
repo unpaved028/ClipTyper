@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,6 +16,7 @@ namespace ClipTyper
         private readonly IKeyboardSender _keyboardSender;
         private readonly IClipboardReader _clipboardReader;
         private readonly IUserPrompt _userPrompt;
+        private readonly IKeyboardLayoutProvider _layoutProvider;
         private int _isTypingFlag; // 0 = idle, 1 = typing active
         private CancellationTokenSource? _cts;
 
@@ -41,12 +44,14 @@ namespace ClipTyper
             SynchronizationContext? syncContext = null,
             IKeyboardSender? keyboardSender = null,
             IClipboardReader? clipboardReader = null,
-            IUserPrompt? userPrompt = null)
+            IUserPrompt? userPrompt = null,
+            IKeyboardLayoutProvider? layoutProvider = null)
         {
             _syncContext = syncContext ?? SynchronizationContext.Current;
             _keyboardSender = keyboardSender ?? new WindowsKeyboardSender();
             _clipboardReader = clipboardReader ?? new WindowsClipboardReader();
             _userPrompt = userPrompt ?? new WindowsUserPrompt();
+            _layoutProvider = layoutProvider ?? new WindowsKeyboardLayoutProvider();
         }
 
         /// <summary>
@@ -84,6 +89,17 @@ namespace ClipTyper
             {
                 await Task.Run(() => PerformClipType());
             }
+            catch (Exception ex)
+            {
+                // Callers fire and forget this task, so an exception would otherwise vanish unlogged
+                // and leave the overlay/tray stuck in the "typing" state.
+                Logger.LogError("Clip-type failed", ex);
+                PostToUI(() =>
+                {
+                    ProgressChanged?.Invoke(false, 0, 0);
+                    TypingCompleted?.Invoke(false);
+                });
+            }
             finally
             {
                 ctsToDispose = _cts;
@@ -109,16 +125,16 @@ namespace ClipTyper
                 PostToUISync(() =>
                 {
                     _userPrompt.ShowWarning(
-                        "The target window is running with Administrator privileges.\n\nClipTyper is currently running without Administrator privileges. Windows is blocking keyboard input to this window.\n\nPlease launch ClipTyper as Administrator as well.",
-                        "ClipTyper - Administrator Privileges Required");
+                        "The target window runs as Administrator, so Windows blocks typed input from ClipTyper. Start ClipTyper as Administrator to type into this window.",
+                        "ClipTyper - Administrator window");
                 });
                 return;
             }
 
             var settings = SettingsManager.Current;
 
-            // 2. Read text from Clipboard safely (respecting plain text enforcement)
-            string textToType = _clipboardReader.ReadText(settings.EnforcePlainText);
+            // 2. Read plain text from Clipboard safely
+            string textToType = _clipboardReader.ReadText();
             if (string.IsNullOrEmpty(textToType))
             {
                 Logger.LogInfo("Clip-type trigger ignored: clipboard contains no usable text.");
@@ -152,25 +168,126 @@ namespace ClipTyper
             }
 
             // 4. Check for Two-Stage Credential Auto-Type (TD-23: custom transition key)
-            if (CredentialParser.TrySplit(
+            CredentialParser.TrySplit(
                 textToType,
                 settings.CredentialAutoTypeMode,
                 settings.CredentialCustomDelimiter,
                 out var credResult,
-                settings.CredentialCustomTransitionKey) && credResult != null)
+                settings.CredentialCustomTransitionKey);
+
+            // 5. VK compatibility mode: open the target keyboard layout for the whole typing run
+            IKeyboardLayout? layout = null;
+            try
             {
-                PerformCredentialAutoType(credResult, settings, targetHWnd);
-                return;
+                KeyboardLayoutMapper? vkLayout = null;
+                if (settings.EnableVkCompatibilityMode)
+                {
+                    layout = _layoutProvider.Open(settings.TargetKeyboardLayout, targetHWnd);
+                    if (layout == null)
+                    {
+                        Logger.LogWarning($"Target keyboard layout '{settings.TargetKeyboardLayout}' could not be loaded.");
+                        PostToUISync(() =>
+                        {
+                            _userPrompt.ShowWarning(
+                                $"The keyboard layout \"{KeyboardLayouts.GetDisplayName(settings.TargetKeyboardLayout)}\" could not be loaded, so nothing was typed. Choose a different target keyboard in Settings.",
+                                "ClipTyper - Keyboard layout");
+                        });
+                        return;
+                    }
+
+                    vkLayout = new KeyboardLayoutMapper(layout);
+                    var textsToCheck = credResult != null
+                        ? new[] { credResult.Part1, credResult.Part2 }
+                        : new[] { textToType };
+                    if (!ConfirmUnmappableCharacters(vkLayout, textsToCheck, settings, isCredential: credResult != null, targetHWnd))
+                    {
+                        return;
+                    }
+                }
+
+                if (credResult != null)
+                {
+                    PerformCredentialAutoType(credResult, settings, targetHWnd, textToType, vkLayout);
+                    return;
+                }
+
+                PerformStandardType(textToType, settings, targetHWnd, vkLayout);
+            }
+            finally
+            {
+                layout?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Warns before typing when characters have no key on the target layout. Returns false
+        /// when the user cancels. Credential characters are never shown, only counted.
+        /// </summary>
+        private bool ConfirmUnmappableCharacters(
+            KeyboardLayoutMapper vkLayout,
+            IEnumerable<string> texts,
+            AppSettings settings,
+            bool isCredential,
+            IntPtr targetHWnd)
+        {
+            var unmappable = texts
+                .Select(t => settings.SanitizeInput ? KeyboardSimulator.SanitizeText(t) : t)
+                .SelectMany(vkLayout.FindUnmappable)
+                .Distinct()
+                .ToList();
+            if (unmappable.Count == 0)
+            {
+                return true;
             }
 
-            // 5. Standard Single-Stage Typing Simulation
+            Logger.LogWarning($"{unmappable.Count} distinct character(s) have no key on the target keyboard layout.");
+
+            string layoutText = string.IsNullOrEmpty(settings.TargetKeyboardLayout)
+                ? "the current keyboard layout"
+                : $"the target keyboard layout \"{KeyboardLayouts.GetDisplayName(settings.TargetKeyboardLayout)}\"";
+            string which = isCredential
+                ? $"The credentials contain {unmappable.Count} character(s) that cannot be typed with {layoutText}."
+                : $"These characters cannot be typed with {layoutText}:\n\n{FormatCharacters(unmappable)}";
+
+            bool userConfirmed = false;
+            PostToUISync(() =>
+            {
+                userConfirmed = _userPrompt.ShowConfirmation(
+                    which + "\n\nThey would be sent as Unicode characters, which most remote consoles ignore or type incorrectly.\n\nDo you want to type anyway?",
+                    "ClipTyper - Characters Not On Keyboard Layout");
+            });
+
+            if (!userConfirmed)
+            {
+                Logger.LogInfo("Typing cancelled by user: characters missing on the target keyboard layout.");
+                return false;
+            }
+
+            NativeMethods.ForceForegroundWindow(targetHWnd);
+            Thread.Sleep(200);
+            return true;
+        }
+
+        private static string FormatCharacters(List<string> characters)
+        {
+            const int maxShown = 15;
+            var shown = characters.Take(maxShown).Select(c =>
+                c.Length == 1 && (char.IsControl(c[0]) || char.IsWhiteSpace(c[0]) || char.GetUnicodeCategory(c[0]) == System.Globalization.UnicodeCategory.Format)
+                    ? $"U+{(int)c[0]:X4}"
+                    : c);
+            string list = string.Join("  ", shown);
+            return characters.Count > maxShown ? $"{list}  (+{characters.Count - maxShown} more)" : list;
+        }
+
+        private void PerformStandardType(string textToType, AppSettings settings, IntPtr targetHWnd, KeyboardLayoutMapper? vkLayout)
+        {
             PostToUI(() => ProgressChanged?.Invoke(true, 0, textToType.Length));
 
             TypeResult result = _keyboardSender.SendText(
                 textToType,
                 delayMs: settings.KeystrokeDelayMs,
                 targetHWnd: targetHWnd,
-                enableVkMode: settings.EnableVkCompatibilityMode,
+                vkLayout: vkLayout,
                 sanitize: settings.SanitizeInput,
                 newlineMode: settings.NewlineHandling,
                 enableJitter: settings.EnableTypingJitter,
@@ -194,7 +311,9 @@ namespace ClipTyper
         private void PerformCredentialAutoType(
             CredentialSplitResult cred,
             AppSettings settings,
-            IntPtr targetHWnd)
+            IntPtr targetHWnd,
+            string clipboardText,
+            KeyboardLayoutMapper? vkLayout)
         {
             // Security: Never log actual credential content or lengths (TD-79)!
             Logger.LogInfo("Starting Credential Auto-Type (2 stages).");
@@ -211,7 +330,7 @@ namespace ClipTyper
                 stage1Text,
                 delayMs: settings.KeystrokeDelayMs,
                 targetHWnd: targetHWnd,
-                enableVkMode: settings.EnableVkCompatibilityMode,
+                vkLayout: vkLayout,
                 sanitize: settings.SanitizeInput,
                 newlineMode: NewlineMode.Enter,
                 enableJitter: settings.EnableTypingJitter,
@@ -255,8 +374,8 @@ namespace ClipTyper
                 PostToUISync(() =>
                 {
                     _userPrompt.ShowWarning(
-                        "Credential typing was cancelled because the active window changed before typing the password.\n\nPlease refocus the target window and try again.",
-                        "ClipTyper - Typing Cancelled");
+                        "The password was not typed because the active window changed after the username. Click into the login field and try again.",
+                        "ClipTyper - Typing cancelled");
                 });
                 return;
             }
@@ -266,7 +385,7 @@ namespace ClipTyper
                 stage2Text,
                 delayMs: settings.KeystrokeDelayMs,
                 targetHWnd: targetHWnd,
-                enableVkMode: settings.EnableVkCompatibilityMode,
+                vkLayout: vkLayout,
                 sanitize: settings.SanitizeInput,
                 newlineMode: NewlineMode.Enter,
                 enableJitter: settings.EnableTypingJitter,
@@ -289,7 +408,7 @@ namespace ClipTyper
             // ── Optional Auto-Clear of Clipboard ──
             if (r2 == TypeResult.Completed && settings.CredentialAutoClearClipboard)
             {
-                ScheduleClipboardClear(settings.CredentialAutoClearDelaySeconds);
+                ScheduleClipboardClear(settings.CredentialAutoClearDelaySeconds, clipboardText);
             }
         }
 
@@ -317,8 +436,8 @@ namespace ClipTyper
                 PostToUISync(() =>
                 {
                     _userPrompt.ShowWarning(
-                        "Typing was cancelled because the active window changed.\n\nPlease refocus the target window and try again.",
-                        "ClipTyper - Typing Cancelled");
+                        "Typing stopped because the active window changed. Click into the target window and try again.",
+                        "ClipTyper - Typing cancelled");
                 });
             }
             else if (result == TypeResult.AbortedByEscape)
@@ -327,7 +446,7 @@ namespace ClipTyper
             }
         }
 
-        private void ScheduleClipboardClear(int delaySeconds)
+        private void ScheduleClipboardClear(int delaySeconds, string typedClipboardText)
         {
             Task.Run(async () =>
             {
@@ -336,6 +455,13 @@ namespace ClipTyper
                 {
                     try
                     {
+                        // Only clear what was typed: leave anything the user copied in the meantime.
+                        if (!string.Equals(_clipboardReader.ReadText(), typedClipboardText, StringComparison.Ordinal))
+                        {
+                            Logger.LogInfo("Clipboard auto-clear skipped: clipboard content changed since typing.");
+                            return;
+                        }
+
                         _clipboardReader.Clear();
                         Logger.LogInfo("Clipboard automatically cleared after credential auto-type.");
                     }
@@ -350,9 +476,9 @@ namespace ClipTyper
         /// <summary>
         /// Convenience method to read text directly via <see cref="WindowsClipboardReader"/>.
         /// </summary>
-        public static string ReadClipboardText(bool enforcePlainText = false)
+        public static string ReadClipboardText()
         {
-            return new WindowsClipboardReader().ReadText(enforcePlainText);
+            return new WindowsClipboardReader().ReadText();
         }
 
         private void PostToUI(Action action)

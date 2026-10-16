@@ -18,6 +18,8 @@ namespace ClipTyper
         private OverlayForm? _overlay;
         private Icon? _badgedTrayIcon;
         private UpdateChecker.UpdateCheckResult? _cachedUpdateResult;
+        private SettingsForm? _openSettingsForm;
+        private AboutForm? _openAboutForm;
         private readonly TypingService _typingService;
         private const int HotkeyId = 1;
         private const int OverlayToggleHotkeyId = 2;
@@ -65,8 +67,8 @@ namespace ClipTyper
         private readonly HotkeyForm _hiddenForm;
 
         /// <summary>
-        /// Loads the embedded app icon (256x256) from the assembly resources.
-        /// Falls back to the default application icon if not found.
+        /// Loads the embedded app icon in the small-icon size of the current DPI (16 px at 100 %,
+        /// 24 px at 150 %). Falls back to the default application icon if not found.
         /// </summary>
         private static Icon LoadEmbeddedIcon()
         {
@@ -76,7 +78,7 @@ namespace ClipTyper
                 using var stream = assembly.GetManifestResourceStream("ClipTyper.icon_app.ico");
                 if (stream != null)
                 {
-                    return new Icon(stream, 32, 32);
+                    return new Icon(stream, SystemInformation.SmallIconSize);
                 }
             }
             catch { /* fall through to default */ }
@@ -111,7 +113,10 @@ namespace ClipTyper
                 Text = "ClipTyper"
             };
 
-            _typingService = new TypingService(SynchronizationContext.Current);
+            _typingService = new TypingService(
+                SynchronizationContext.Current,
+                userPrompt: new WindowsUserPrompt(notify: (title, message) =>
+                    _trayIcon.ShowBalloonTip(6000, title, message, ToolTipIcon.Warning)));
             _typingService.ProgressChanged += (isTyping, current, total) =>
             {
                 _overlay?.SetTypingState(isTyping, current, total);
@@ -155,6 +160,8 @@ namespace ClipTyper
 
             _trayIcon.ContextMenuStrip.Items.Add(_stopTypingMenuItem);
             _trayIcon.ContextMenuStrip.Items.Add(_stopTypingSeparator);
+            TypingModeMenu.AddTo(_trayIcon.ContextMenuStrip);
+            _trayIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
             _trayIcon.ContextMenuStrip.Items.Add("Settings", null, OnSettings);
             _trayIcon.ContextMenuStrip.Items.Add("About", null, OnAbout);
             _trayIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
@@ -162,7 +169,7 @@ namespace ClipTyper
 
             _trayIcon.ContextMenuStrip.Opening += OnContextMenuOpening;
 
-            // Register the hotkey from settings (or default Ctrl+Shift+T)
+            // Register the hotkey from settings (or default Ctrl+Alt+V)
             _hotkey = new GlobalHotkey(
                 handle,
                 HotkeyId,
@@ -249,10 +256,15 @@ namespace ClipTyper
             System.Threading.Tasks.Task.Run(async () =>
             {
                 var result = await UpdateChecker.CheckAsync();
+                if (result == null)
+                {
+                    return; // offline or GitHub unreachable: try again on next start
+                }
+
                 settings.LastUpdateCheckUtc = DateTime.UtcNow;
                 SettingsManager.Save();
 
-                if (result != null && result.IsUpdateAvailable)
+                if (result.IsUpdateAvailable)
                 {
                     if (_hiddenForm.InvokeRequired)
                     {
@@ -319,14 +331,19 @@ namespace ClipTyper
                     g.FillEllipse(redBrush, x, y, size, size);
                 }
 
+                // Copy the icon before freeing the GetHicon() handle: NotifyIcon re-sends its icon
+                // handle on every tooltip change, so it must stay valid while it is displayed.
                 IntPtr hIcon = bmp.GetHicon();
-                var newIcon = Icon.FromHandle(hIcon);
+                Icon newIcon;
+                using (var temporary = Icon.FromHandle(hIcon))
+                {
+                    newIcon = (Icon)temporary.Clone();
+                }
+                NativeMethods.DestroyIcon(hIcon);
+
                 _trayIcon.Icon = newIcon;
                 _badgedTrayIcon?.Dispose();
                 _badgedTrayIcon = newIcon;
-
-                // Free native Win32 icon handle created by GetHicon()
-                NativeMethods.DestroyIcon(hIcon);
             }
             catch
             {
@@ -378,7 +395,8 @@ namespace ClipTyper
         private void HideOverlay()
         {
             if (_overlay == null) return;
-            _overlay.Close();
+            // Dispose only: Close() sends WM_CLOSE, which OverlayForm treats as an
+            // external shutdown request and answers with Application.Exit().
             _overlay.Dispose();
             _overlay = null;
         }
@@ -410,9 +428,16 @@ namespace ClipTyper
 
         private void OnSettings(object? sender, EventArgs e)
         {
+            if (_openSettingsForm != null)
+            {
+                _openSettingsForm.Activate();
+                return;
+            }
+
             int originalScale = SettingsManager.Current.OverlayScalePercent;
 
             using var form = new SettingsForm();
+            _openSettingsForm = form;
 
             Action<int> liveScaleHandler = (scale) =>
             {
@@ -430,19 +455,21 @@ namespace ClipTyper
                 // Try to update the trigger hotkey
                 var newMod = (GlobalHotkey.Modifiers)updatedSettings.HotkeyModifiers;
                 var newKey = (Keys)updatedSettings.HotkeyKey;
-                if (newMod != _hotkey.CurrentModifier || newKey != _hotkey.CurrentKey)
+                if (!_hotkey.IsRegistered || newMod != _hotkey.CurrentModifier || newKey != _hotkey.CurrentKey)
                 {
                     if (!_hotkey.Reregister(newMod, newKey))
                     {
                         MessageBox.Show(
-                            "Could not register the hotkey. It may be in use by another application.\n\n" +
-                            "The previous hotkey has been restored.",
+                            "Could not register the hotkey. It may be in use by another application." +
+                            (_hotkey.IsRegistered ? "\n\nThe previous hotkey has been restored." : ""),
                             "Hotkey Registration Failed",
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
-                        // TD-40: Revert only the hotkey property so other settings are NOT lost
-                        updatedSettings.HotkeyModifiers = (int)_hotkey.CurrentModifier;
-                        updatedSettings.HotkeyKey = (int)_hotkey.CurrentKey;
+                        // TD-40: Revert only the hotkey property so other settings are NOT lost.
+                        // Use the saved setting, not _hotkey.Current*: those are None when the
+                        // hotkey could not be registered at startup.
+                        updatedSettings.HotkeyModifiers = current.HotkeyModifiers;
+                        updatedSettings.HotkeyKey = current.HotkeyKey;
                     }
                 }
 
@@ -470,20 +497,20 @@ namespace ClipTyper
                             updatedSettings.OverlayToggleKey = current.OverlayToggleKey;
                         }
                     }
-                    else if (toggleMods != _overlayToggleHotkey.CurrentModifier || toggleKey != _overlayToggleHotkey.CurrentKey)
+                    else if (!_overlayToggleHotkey.IsRegistered || toggleMods != _overlayToggleHotkey.CurrentModifier || toggleKey != _overlayToggleHotkey.CurrentKey)
                     {
                         if (!_overlayToggleHotkey.Reregister(toggleMods, toggleKey))
                         {
                             MessageBox.Show(
-                                "Could not register the overlay toggle hotkey. It may be in use by another application.\n\n" +
-                                "The previous hotkey has been restored.",
+                                "Could not register the overlay toggle hotkey. It may be in use by another application." +
+                                (_overlayToggleHotkey.IsRegistered ? "\n\nThe previous hotkey has been restored." : ""),
                                 "Hotkey Registration Failed",
                                 MessageBoxButtons.OK,
                                 MessageBoxIcon.Warning);
 
                             // TD-68: Revert settings on failed registration
-                            updatedSettings.OverlayToggleModifiers = (int)_overlayToggleHotkey.CurrentModifier;
-                            updatedSettings.OverlayToggleKey = (int)_overlayToggleHotkey.CurrentKey;
+                            updatedSettings.OverlayToggleModifiers = current.OverlayToggleModifiers;
+                            updatedSettings.OverlayToggleKey = current.OverlayToggleKey;
                         }
                     }
                 }
@@ -503,6 +530,7 @@ namespace ClipTyper
                 {
                     updatedSettings.OverlayX = current.OverlayX;
                     updatedSettings.OverlayY = current.OverlayY;
+                    updatedSettings.OverlayPositionDpiAware = current.OverlayPositionDpiAware;
                 }
 
                 // TD-39: Save all updated settings via single Replace method
@@ -544,7 +572,15 @@ namespace ClipTyper
                 }
             };
 
-            var result = form.ShowDialog();
+            DialogResult result;
+            try
+            {
+                result = form.ShowDialog();
+            }
+            finally
+            {
+                _openSettingsForm = null;
+            }
 
             form.LiveScaleChanged -= liveScaleHandler;
 
@@ -569,9 +605,23 @@ namespace ClipTyper
             string hotkeyText = SettingsForm.FormatHotkey(_hotkey.CurrentModifier, _hotkey.CurrentKey);
             bool overlayActive = _overlay != null && SettingsManager.Current.OverlayEnabled;
 
+            if (_openAboutForm != null)
+            {
+                _openAboutForm.Activate();
+                return;
+            }
+
             using var aboutForm = new AboutForm(hotkeyText, overlayActive, _cachedUpdateResult);
             aboutForm.UpdateAvailable += NotifyUpdateAvailable;
-            aboutForm.ShowDialog();
+            _openAboutForm = aboutForm;
+            try
+            {
+                aboutForm.ShowDialog();
+            }
+            finally
+            {
+                _openAboutForm = null;
+            }
         }
 
         // ── Shutdown ────────────────────────────────────────────────
@@ -582,8 +632,8 @@ namespace ClipTyper
             _badgedTrayIcon?.Dispose();
             _trayIcon.Dispose();
             _boldMenuFont?.Dispose();
-            _overlay?.Close();
             _overlay?.Dispose();
+            _overlay = null;
             _hotkey.Dispose();
             _overlayToggleHotkey?.Dispose();
             _typingService.Dispose();

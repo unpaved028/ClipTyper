@@ -10,9 +10,9 @@ namespace ClipTyper
     public interface IClipboardReader
     {
         /// <summary>
-        /// Reads text from the clipboard safely on an STA thread.
+        /// Reads plain text from the clipboard safely on an STA thread.
         /// </summary>
-        string ReadText(bool enforcePlainText = false);
+        string ReadText();
 
         /// <summary>
         /// Clears clipboard contents.
@@ -25,20 +25,20 @@ namespace ClipTyper
     /// </summary>
     public class WindowsClipboardReader : IClipboardReader
     {
-        public string ReadText(bool enforcePlainText = false)
+        public string ReadText()
         {
             string text = string.Empty;
             try
             {
                 if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
                 {
-                    text = GetClipboardTextInternal(enforcePlainText);
+                    text = GetClipboardTextInternal();
                 }
                 else
                 {
                     var thread = new Thread(() =>
                     {
-                        text = GetClipboardTextInternal(enforcePlainText);
+                        text = GetClipboardTextInternal();
                     });
                     thread.SetApartmentState(ApartmentState.STA);
                     thread.Start();
@@ -77,25 +77,16 @@ namespace ClipTyper
             }
         }
 
-        private static string GetClipboardTextInternal(bool enforcePlainText)
+        private static string GetClipboardTextInternal()
         {
-            if (!Clipboard.ContainsText())
+            // Formatted content (RTF/HTML) is never read: only the plain-text
+            // formats are requested, Unicode first with ANSI text as fallback.
+            string txt = Clipboard.GetText(TextDataFormat.UnicodeText);
+            if (string.IsNullOrEmpty(txt))
             {
-                return string.Empty;
+                txt = Clipboard.GetText(TextDataFormat.Text);
             }
-
-            if (enforcePlainText)
-            {
-                // Prefer Unicode plain text; fallback to standard text if empty
-                string txt = Clipboard.GetText(TextDataFormat.UnicodeText);
-                if (string.IsNullOrEmpty(txt))
-                {
-                    txt = Clipboard.GetText(TextDataFormat.Text);
-                }
-                return txt ?? string.Empty;
-            }
-
-            return Clipboard.GetText() ?? string.Empty;
+            return txt ?? string.Empty;
         }
     }
 }

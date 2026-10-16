@@ -1,0 +1,35 @@
+{
+    "version": "1.8.0",
+    "description": "Types clipboard text as keystrokes where paste is blocked: VM consoles, iLO/iDRAC, KVM-over-IP, RDP and paste-blocked fields.",
+    "homepage": "https://github.com/unpaved028/ClipTyper",
+    "license": "MIT",
+    "notes": [
+        "ClipTyper runs in the system tray. Default hotkey: Ctrl+Alt+V (change it in Settings).",
+        "Exit ClipTyper from the tray before 'scoop update', otherwise the EXE is locked."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/unpaved028/ClipTyper/releases/download/v1.8.0/ClipTyper-Portable.exe",
+            "hash": "REPLACE_WITH_SHA256_OF_ClipTyper-Portable.exe_FROM_SHA256SUMS.txt"
+        }
+    },
+    "pre_install": "if (!(Test-Path \"$persist_dir\\settings.json\")) { Set-Content \"$dir\\settings.json\" '{}' -Encoding ascii }",
+    "persist": "settings.json",
+    "shortcuts": [
+        [
+            "ClipTyper-Portable.exe",
+            "ClipTyper"
+        ]
+    ],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/unpaved028/ClipTyper/releases/download/v$version/ClipTyper-Portable.exe",
+                "hash": {
+                    "url": "$baseurl/SHA256SUMS.txt"
+                }
+            }
+        }
+    }
+}
