@@ -20,6 +20,7 @@ namespace ClipTyper
         private UpdateChecker.UpdateCheckResult? _cachedUpdateResult;
         private SettingsForm? _openSettingsForm;
         private AboutForm? _openAboutForm;
+        private Action? _balloonClickAction;
         private readonly TypingService _typingService;
         private const int HotkeyId = 1;
         private const int OverlayToggleHotkeyId = 2;
@@ -94,9 +95,10 @@ namespace ClipTyper
                 SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
             }
 
-            // Load persisted settings
+            // Load persisted settings and apply the appearance before any window is created
             SettingsManager.Load();
             var settings = SettingsManager.Current;
+            Theme.Apply(settings.Theme);
 
             _hiddenForm = new HotkeyForm();
             _hiddenForm.HotkeyPressed += OnHotkeyPressed;
@@ -108,15 +110,25 @@ namespace ClipTyper
             _trayIcon = new NotifyIcon()
             {
                 Icon = LoadEmbeddedIcon(),
-                ContextMenuStrip = new ContextMenuStrip(),
+                ContextMenuStrip = new ContextMenuStrip { Renderer = ModernMenuRenderer.Instance },
                 Visible = true,
                 Text = "ClipTyper"
+            };
+            _trayIcon.MouseDoubleClick += (_, e) =>
+            {
+                if (e.Button == MouseButtons.Left) OnSettings(this, EventArgs.Empty);
+            };
+            _trayIcon.BalloonTipClicked += (_, _) =>
+            {
+                var action = _balloonClickAction;
+                _balloonClickAction = null;
+                action?.Invoke();
             };
 
             _typingService = new TypingService(
                 SynchronizationContext.Current,
                 userPrompt: new WindowsUserPrompt(notify: (title, message) =>
-                    _trayIcon.ShowBalloonTip(6000, title, message, ToolTipIcon.Warning)));
+                    ShowBalloon(6000, title, message, ToolTipIcon.Warning)));
             _typingService.ProgressChanged += (isTyping, current, total) =>
             {
                 _overlay?.SetTypingState(isTyping, current, total);
@@ -141,11 +153,7 @@ namespace ClipTyper
             // TD-41: User feedback when clipboard has no usable text
             _typingService.ClipboardEmpty += () =>
             {
-                _trayIcon.ShowBalloonTip(
-                    3000,
-                    "ClipTyper",
-                    "The clipboard contains no text to type.",
-                    ToolTipIcon.Info);
+                ShowBalloon(3000, "ClipTyper", "The clipboard contains no text to type.", ToolTipIcon.Info);
             };
 
             // TD-70: Build tray menu once, cache bold font, avoid allocation leaks on menu open
@@ -153,7 +161,7 @@ namespace ClipTyper
             _stopTypingMenuItem = new ToolStripMenuItem("⏹ Stop Typing", null, (_, _) => _typingService.CancelTyping())
             {
                 Font = _boldMenuFont,
-                ForeColor = Color.DarkRed,
+                Tag = ModernMenuRenderer.DangerTag,
                 Visible = false
             };
             _stopTypingSeparator = new ToolStripSeparator() { Visible = false };
@@ -177,15 +185,18 @@ namespace ClipTyper
                 (Keys)settings.HotkeyKey);
 
             // TD-03: Check if primary hotkey registration succeeded
+            bool startupWarningShown = false;
             if (!_hotkey.IsRegistered)
             {
                 string hotkeyName = SettingsForm.FormatHotkey((GlobalHotkey.Modifiers)settings.HotkeyModifiers, (Keys)settings.HotkeyKey);
                 Logger.LogWarning($"Primary hotkey '{hotkeyName}' could not be registered on startup.");
-                _trayIcon.ShowBalloonTip(
+                ShowBalloon(
                     5000,
                     "ClipTyper - Hotkey Registration Failed",
                     $"The hotkey '{hotkeyName}' is already in use by another application.\n\nPlease open Settings and choose a different hotkey.",
-                    ToolTipIcon.Warning);
+                    ToolTipIcon.Warning,
+                    () => OnSettings(this, EventArgs.Empty));
+                startupWarningShown = true;
             }
 
             // Register the overlay toggle hotkey if enabled
@@ -221,15 +232,81 @@ namespace ClipTyper
             if (SettingsManager.IsPortableFallbackToAppData)
             {
                 Logger.LogWarning($"Running in portable mode, but directory '{SettingsManager.ExeDir}' is write-protected. Falling back to '{SettingsManager.SettingsDir}'.");
-                _trayIcon.ShowBalloonTip(
+                ShowBalloon(
                     6000,
                     "ClipTyper - Read-Only Directory",
                     "ClipTyper is running from a write-protected directory.\nSettings are being saved to LocalAppData instead.",
                     ToolTipIcon.Warning);
+                startupWarningShown = true;
             }
+
+            ShowStartupNotice(startupWarningShown);
 
             // Check for updates in background (24h throttled)
             RunStartupUpdateCheck();
+        }
+
+        /// <summary>
+        /// Tray notification; <paramref name="onClick"/> runs when the user clicks it.
+        /// </summary>
+        private void ShowBalloon(int timeoutMs, string title, string text, ToolTipIcon icon, Action? onClick = null)
+        {
+            _balloonClickAction = onClick;
+            _trayIcon.ShowBalloonTip(timeoutMs, title, text, icon);
+        }
+
+        /// <summary>
+        /// Welcome after the first start, "what's new" after updating to a new minor version.
+        /// Skipped when a startup warning (hotkey taken, read-only folder) is already showing.
+        /// </summary>
+        private void ShowStartupNotice(bool startupWarningShown)
+        {
+            var settings = SettingsManager.Current;
+            string currentVersion = UpdateChecker.GetCurrentVersion();
+            var notice = StartupNotices.Decide(SettingsManager.IsFirstRun, settings.LastRunVersion, currentVersion);
+
+            if (settings.LastRunVersion != currentVersion)
+            {
+                settings.LastRunVersion = currentVersion;
+                SettingsManager.Save();
+            }
+
+            if (startupWarningShown)
+            {
+                return;
+            }
+
+            if (notice == StartupNotice.Welcome)
+            {
+                string hotkey = SettingsForm.FormatHotkey(_hotkey.CurrentModifier, _hotkey.CurrentKey);
+                ShowBalloon(
+                    8000,
+                    "ClipTyper is running",
+                    $"Press {hotkey} to type the clipboard into the active window. Right-click this icon for settings.",
+                    ToolTipIcon.Info,
+                    () => OnSettings(this, EventArgs.Empty));
+            }
+            else if (notice == StartupNotice.WhatsNew)
+            {
+                ShowBalloon(
+                    8000,
+                    $"ClipTyper updated to v{currentVersion}",
+                    StartupNotices.WhatsNewText,
+                    ToolTipIcon.Info,
+                    () => OpenUrl($"https://github.com/unpaved028/ClipTyper/releases/tag/v{currentVersion}"));
+            }
+        }
+
+        private static void OpenUrl(string url)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Could not open {url}: {ex.Message}");
+            }
         }
 
         private void OnContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -284,18 +361,12 @@ namespace ClipTyper
             ApplyTrayIconBadge(true);
             _overlay?.SetUpdateBadge(true);
 
-            _trayIcon.BalloonTipClicked -= OnBalloonTipClicked;
-            _trayIcon.BalloonTipClicked += OnBalloonTipClicked;
-            _trayIcon.ShowBalloonTip(
+            ShowBalloon(
                 5000,
                 "ClipTyper Update Available",
                 $"Version v{result.LatestVersion} is available. Click here for details.",
-                ToolTipIcon.Info);
-        }
-
-        private void OnBalloonTipClicked(object? sender, EventArgs e)
-        {
-            OnAbout(sender, e);
+                ToolTipIcon.Info,
+                () => OnAbout(this, EventArgs.Empty));
         }
 
         private void ApplyTrayIconBadge(bool hasBadge)
@@ -459,12 +530,12 @@ namespace ClipTyper
                 {
                     if (!_hotkey.Reregister(newMod, newKey))
                     {
-                        MessageBox.Show(
-                            "Could not register the hotkey. It may be in use by another application." +
-                            (_hotkey.IsRegistered ? "\n\nThe previous hotkey has been restored." : ""),
-                            "Hotkey Registration Failed",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
+                        Dialogs.Show(
+                            _openSettingsForm,
+                            TaskDialogIcon.Warning,
+                            "The hotkey could not be registered",
+                            $"{SettingsForm.FormatHotkey(newMod, newKey)} is probably used by another application." +
+                            (_hotkey.IsRegistered ? " The previous hotkey is still active." : ""));
                         // TD-40: Revert only the hotkey property so other settings are NOT lost.
                         // Use the saved setting, not _hotkey.Current*: those are None when the
                         // hotkey could not be registered at startup.
@@ -484,11 +555,11 @@ namespace ClipTyper
                         _overlayToggleHotkey = new GlobalHotkey(_hiddenForm.Handle, OverlayToggleHotkeyId, toggleMods, toggleKey);
                         if (!_overlayToggleHotkey.IsRegistered)
                         {
-                            MessageBox.Show(
-                                "Could not register the overlay toggle hotkey. It may be in use by another application.",
-                                "Hotkey Registration Failed",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Warning);
+                            Dialogs.Show(
+                                _openSettingsForm,
+                                TaskDialogIcon.Warning,
+                                "The overlay shortcut could not be registered",
+                                $"{SettingsForm.FormatHotkey(toggleMods, toggleKey)} is probably used by another application.");
 
                             _overlayToggleHotkey.Dispose();
                             _overlayToggleHotkey = null;
@@ -501,12 +572,12 @@ namespace ClipTyper
                     {
                         if (!_overlayToggleHotkey.Reregister(toggleMods, toggleKey))
                         {
-                            MessageBox.Show(
-                                "Could not register the overlay toggle hotkey. It may be in use by another application." +
-                                (_overlayToggleHotkey.IsRegistered ? "\n\nThe previous hotkey has been restored." : ""),
-                                "Hotkey Registration Failed",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Warning);
+                            Dialogs.Show(
+                                _openSettingsForm,
+                                TaskDialogIcon.Warning,
+                                "The overlay shortcut could not be registered",
+                                $"{SettingsForm.FormatHotkey(toggleMods, toggleKey)} is probably used by another application." +
+                                (_overlayToggleHotkey.IsRegistered ? " The previous shortcut is still active." : ""));
 
                             // TD-68: Revert settings on failed registration
                             updatedSettings.OverlayToggleModifiers = current.OverlayToggleModifiers;
@@ -533,8 +604,15 @@ namespace ClipTyper
                     updatedSettings.OverlayPositionDpiAware = current.OverlayPositionDpiAware;
                 }
 
+                bool themeChanged = updatedSettings.Theme != current.Theme;
+
                 // TD-39: Save all updated settings via single Replace method
                 SettingsManager.Replace(updatedSettings);
+
+                if (themeChanged)
+                {
+                    Theme.Apply(updatedSettings.Theme);
+                }
 
                 // Apply overlay changes
                 if (updatedSettings.OverlayEnabled)

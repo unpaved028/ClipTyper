@@ -45,14 +45,14 @@ namespace ClipTyper.Tests
                 {
                     using var menu = new ContextMenuStrip();
                     var quickSwitch = TypingModeMenu.AddTo(menu);
-                    Assert.Equal("Keyboard layout (Same as this PC)", quickSwitch.LayoutItem.Text);
+                    Assert.Equal("Keyboard layout: Same as this PC", quickSwitch.LayoutItem.Text);
 
                     quickSwitch.SelectLayout("00000409");
 
                     Assert.Equal("00000409", SettingsManager.Current.TargetKeyboardLayout);
                     Assert.True(SettingsManager.Current.EnableVkCompatibilityMode);
                     Assert.True(quickSwitch.VkModeItem.Checked);
-                    Assert.Equal("Keyboard layout (English (United States))", quickSwitch.LayoutItem.Text);
+                    Assert.Equal("Keyboard layout: English (United States)", quickSwitch.LayoutItem.Text);
                 });
 
                 string saved = File.ReadAllText(SettingsManager.SettingsFile);

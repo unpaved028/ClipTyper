@@ -51,7 +51,7 @@ namespace ClipTyper
         {
             var settings = SettingsManager.Current;
             VkModeItem.Checked = settings.EnableVkCompatibilityMode;
-            LayoutItem.Text = $"Keyboard layout ({KeyboardLayouts.GetDisplayName(settings.TargetKeyboardLayout)})";
+            LayoutItem.Text = $"Keyboard layout: {KeyboardLayouts.GetDisplayName(settings.TargetKeyboardLayout)}";
         }
 
         private void PopulateLayouts()

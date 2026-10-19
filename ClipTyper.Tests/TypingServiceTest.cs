@@ -79,6 +79,7 @@ namespace ClipTyper.Tests
         public int ConfirmationCount { get; private set; }
         public string LastWarningMessage { get; private set; } = string.Empty;
         public string LastConfirmationMessage { get; private set; } = string.Empty;
+        public ConfirmationRequest? LastConfirmation { get; private set; }
 
         public void ShowWarning(string message, string caption)
         {
@@ -86,10 +87,12 @@ namespace ClipTyper.Tests
             LastWarningMessage = message;
         }
 
-        public bool ShowConfirmation(string message, string caption)
+        public bool Confirm(ConfirmationRequest request)
         {
             ConfirmationCount++;
-            LastConfirmationMessage = message;
+            LastConfirmation = request;
+            // Everything the dialog can show, including the collapsed details
+            LastConfirmationMessage = $"{request.Heading}\n{request.Text}\n{request.Details}";
             return ConfirmationResult;
         }
     }
@@ -313,8 +316,12 @@ namespace ClipTyper.Tests
 
                 Assert.Equal("00000409", provider.LastKlid);
                 Assert.Equal(1, prompt.ConfirmationCount);
-                Assert.Contains("\u00e4", prompt.LastConfirmationMessage, StringComparison.Ordinal);
-                Assert.Contains("English (United States)", prompt.LastConfirmationMessage, StringComparison.Ordinal);
+                var request = prompt.LastConfirmation!;
+                Assert.Contains("English (United States)", request.Text, StringComparison.Ordinal);
+                // The characters are only in the collapsed details, never in the visible text
+                Assert.DoesNotContain("\u00e4", request.Heading + request.Text, StringComparison.Ordinal);
+                Assert.Contains("\u00e4", request.Details, StringComparison.Ordinal);
+                Assert.False(request.ConfirmIsDefault);
                 Assert.Equal(0, sender.SendTextCallCount);
                 Assert.True(layout.Disposed);
             }
@@ -393,6 +400,7 @@ namespace ClipTyper.Tests
 
                 Assert.Equal(1, prompt.ConfirmationCount);
                 Assert.Contains("2 character(s)", prompt.LastConfirmationMessage, StringComparison.Ordinal);
+                Assert.Null(prompt.LastConfirmation!.Details);
                 Assert.DoesNotContain("\u00e4", prompt.LastConfirmationMessage, StringComparison.Ordinal);
                 Assert.DoesNotContain("\u00a7", prompt.LastConfirmationMessage, StringComparison.Ordinal);
                 Assert.Equal(0, sender.SendTextCallCount);

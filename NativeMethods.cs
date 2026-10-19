@@ -80,6 +80,41 @@ namespace ClipTyper
             return SetForegroundWindow(hWnd);
         }
 
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+        private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        private const int DWMWCP_ROUNDSMALL = 3;
+
+        /// <summary>
+        /// Windows 11: small rounded corners for a popup window (menus). No effect on Windows 10.
+        /// </summary>
+        public static void RoundWindowCorners(IntPtr hwnd)
+        {
+            int preference = DWMWCP_ROUNDSMALL;
+            _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
+        }
+
+        /// <summary>
+        /// Process name of the window's owner (e.g. "mstsc"), or null if it cannot be read.
+        /// Used for the diagnostic log only.
+        /// </summary>
+        public static string? TryGetProcessName(IntPtr hWnd)
+        {
+            if (hWnd == IntPtr.Zero) return null;
+            try
+            {
+                _ = GetWindowThreadProcessId(hWnd, out uint pid);
+                if (pid == 0) return null;
+                using var process = System.Diagnostics.Process.GetProcessById((int)pid);
+                return process.ProcessName;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         [StructLayout(LayoutKind.Sequential)]
         internal struct BY_HANDLE_FILE_INFORMATION
         {

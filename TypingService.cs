@@ -151,9 +151,11 @@ namespace ClipTyper
                 bool userConfirmed = false;
                 PostToUISync(() =>
                 {
-                    userConfirmed = _userPrompt.ShowConfirmation(
-                        $"The clipboard text contains {textToType.Length:N0} characters.\n\nTyping will take approximately {timeStr}.\n\nDo you want to proceed with typing?",
-                        "ClipTyper - Large Text");
+                    userConfirmed = _userPrompt.Confirm(new ConfirmationRequest(
+                        Caption: "ClipTyper - Large Text",
+                        Heading: $"Type {textToType.Length:N0} characters?",
+                        Text: $"Typing will take about {timeStr}. Press Esc to stop at any time.",
+                        ConfirmButtonText: "Type"));
                 });
 
                 if (!userConfirmed)
@@ -205,6 +207,8 @@ namespace ClipTyper
                     }
                 }
 
+                Logger.LogInfo(DescribeTypingRun(settings, credResult != null, NativeMethods.TryGetProcessName(targetHWnd)));
+
                 if (credResult != null)
                 {
                     PerformCredentialAutoType(credResult, settings, targetHWnd, textToType, vkLayout);
@@ -244,18 +248,23 @@ namespace ClipTyper
 
             string layoutText = string.IsNullOrEmpty(settings.TargetKeyboardLayout)
                 ? "the current keyboard layout"
-                : $"the target keyboard layout \"{KeyboardLayouts.GetDisplayName(settings.TargetKeyboardLayout)}\"";
-            string which = isCredential
-                ? $"The credentials contain {unmappable.Count} character(s) that cannot be typed with {layoutText}."
-                : $"These characters cannot be typed with {layoutText}:\n\n{FormatCharacters(unmappable)}";
+                : $"the keyboard layout \"{KeyboardLayouts.GetDisplayName(settings.TargetKeyboardLayout)}\"";
+            string subject = isCredential ? "The credentials contain" : "The text contains";
+
+            // The characters are only listed behind "Show characters" (never for credentials):
+            // the text is often a password, and the screen may be visible to others.
+            var request = new ConfirmationRequest(
+                Caption: "ClipTyper - Characters Not On Keyboard Layout",
+                Heading: "Some characters cannot be typed",
+                Text: $"{subject} {unmappable.Count} character(s) that {layoutText} has no key for. " +
+                      "They would be sent as Unicode characters, which most remote consoles ignore or type incorrectly.",
+                ConfirmButtonText: "Type anyway",
+                ConfirmIsDefault: false,
+                Details: isCredential ? null : FormatCharacters(unmappable),
+                DetailsButtonText: "Show characters");
 
             bool userConfirmed = false;
-            PostToUISync(() =>
-            {
-                userConfirmed = _userPrompt.ShowConfirmation(
-                    which + "\n\nThey would be sent as Unicode characters, which most remote consoles ignore or type incorrectly.\n\nDo you want to type anyway?",
-                    "ClipTyper - Characters Not On Keyboard Layout");
-            });
+            PostToUISync(() => userConfirmed = _userPrompt.Confirm(request));
 
             if (!userConfirmed)
             {
@@ -266,6 +275,22 @@ namespace ClipTyper
             NativeMethods.ForceForegroundWindow(targetHWnd);
             Thread.Sleep(200);
             return true;
+        }
+
+        /// <summary>
+        /// One log line describing how a typing run is done, for support and beta reports.
+        /// Never contains clipboard text or its length.
+        /// </summary>
+        internal static string DescribeTypingRun(AppSettings settings, bool isCredential, string? targetProcess)
+        {
+            string method = settings.EnableVkCompatibilityMode
+                ? $"key presses (VK), layout={KeyboardLayouts.GetDisplayName(settings.TargetKeyboardLayout)}" +
+                  (string.IsNullOrEmpty(settings.TargetKeyboardLayout) ? "" : $" [{settings.TargetKeyboardLayout}]")
+                : "characters (Unicode)";
+            string jitter = settings.EnableTypingJitter ? $"+/-{settings.TypingJitterRangeMs} ms" : "off";
+            return $"Typing started: method={method}, delay={settings.KeystrokeDelayMs} ms, jitter={jitter}, " +
+                   $"line breaks={settings.NewlineHandling}, credentials={(isCredential ? "2 stages" : "no")}, " +
+                   $"target={targetProcess ?? "unknown"}";
         }
 
         private static string FormatCharacters(List<string> characters)

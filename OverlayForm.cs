@@ -18,7 +18,6 @@ namespace ClipTyper
     {
         // ── Size & Scale Constants ──────────────────────────────────
         private const int BaseSize         = 128;  // Base size in pixels (100% scale at 96 DPI)
-        private const int SizeLarge        = 256;  // Size threshold for loading high-res icon
 
         // ── Peek / animation constants ──────────────────────────────
         private const int EdgeThreshold    = 10;   // px — considered "at edge"
@@ -131,8 +130,8 @@ namespace ClipTyper
 
         private void InitializeIcon()
         {
-            _overlayIcon128 = LoadEmbeddedIcon("ClipTyper.icon_overlay.ico");
-            _overlayIcon256 = LoadEmbeddedIcon("ClipTyper.icon_app.ico");
+            _overlayIcon128 = LoadEmbeddedIcon("ClipTyper.icon_overlay.ico", 128);
+            _overlayIcon256 = LoadEmbeddedIcon("ClipTyper.icon_large.ico", 256);
 
             _iconBox = new PictureBox
             {
@@ -232,9 +231,8 @@ namespace ClipTyper
         }
 
         /// <summary>
-        /// Selects the best icon for the current form size to avoid scaling.
-        /// Small (64) and Medium (128) use the 128px icon.
-        /// Large (256) uses the 256px icon.
+        /// Selects the best icon for the current form size: up to 128 px the 128px icon,
+        /// above (large scale or high-DPI monitors) the 256px icon, so it is only ever scaled down.
         /// Draws a red update badge in top-right corner if _hasUpdateBadge is true.
         /// Draws typing progress or completion checkmark when active.
         /// </summary>
@@ -242,7 +240,7 @@ namespace ClipTyper
         {
             if (_iconBox == null) return;
             var oldImage = _iconBox.Image;
-            var icon = Width >= SizeLarge ? _overlayIcon256 : _overlayIcon128;
+            var icon = Width > BaseSize ? _overlayIcon256 : _overlayIcon128;
             var bmp = icon?.ToBitmap();
 
             if (bmp != null)
@@ -315,7 +313,7 @@ namespace ClipTyper
 
         private void InitializeContextMenu()
         {
-            _overlayMenu = new ContextMenuStrip();
+            _overlayMenu = new ContextMenuStrip { Renderer = ModernMenuRenderer.Instance };
 
             // TD-75: "Stop Typing" option reachable directly from the overlay
             _stopTypingMenuItem = new ToolStripMenuItem("⏹ Stop Typing", null, (_, _) =>
@@ -324,7 +322,7 @@ namespace ClipTyper
             })
             {
                 Font = new Font(_overlayMenu.Font, FontStyle.Bold),
-                ForeColor = Color.DarkRed,
+                Tag = ModernMenuRenderer.DangerTag,
                 Visible = false
             };
             _stopTypingSeparator = new ToolStripSeparator() { Visible = false };
@@ -911,17 +909,17 @@ namespace ClipTyper
         }
 
         /// <summary>
-        /// Loads an embedded icon from assembly resources by logical name.
+        /// Loads the frame of the given size from an embedded (multi-size) icon.
         /// </summary>
-        private static Icon? LoadEmbeddedIcon(string resourceName)
+        private static Icon? LoadEmbeddedIcon(string resourceName, int size)
         {
             try
             {
                 var assembly = Assembly.GetExecutingAssembly();
-                var stream = assembly.GetManifestResourceStream(resourceName);
+                using var stream = assembly.GetManifestResourceStream(resourceName);
                 if (stream != null)
                 {
-                    return new Icon(stream);
+                    return new Icon(stream, size, size);
                 }
             }
             catch { /* fall through */ }

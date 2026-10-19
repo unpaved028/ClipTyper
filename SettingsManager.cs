@@ -84,6 +84,12 @@ namespace ClipTyper
         // Diagnostic Logging (v1.6.1 / TD-78)
         public bool EnableDiagnosticLogging { get; set; } = true;
 
+        // Appearance (v1.8.0): follow Windows, or always light / dark
+        public AppTheme Theme { get; set; } = AppTheme.System;
+
+        // Version that last ran with these settings (v1.8.0), for the one-time "what's new" notice
+        public string? LastRunVersion { get; set; }
+
         /// <summary>
         /// Creates a shallow clone of the current settings.
         /// </summary>
@@ -136,6 +142,9 @@ namespace ClipTyper
             LastUpdateCheckUtc = source.LastUpdateCheckUtc;
 
             EnableDiagnosticLogging = source.EnableDiagnosticLogging;
+
+            Theme = source.Theme;
+            LastRunVersion = source.LastRunVersion;
         }
     }
 
@@ -189,6 +198,11 @@ namespace ClipTyper
         /// The current in-memory settings instance.
         /// </summary>
         public static AppSettings Current { get; private set; } = new();
+
+        /// <summary>
+        /// True when the last <see cref="Load"/> found no settings file (first start of this installation).
+        /// </summary>
+        public static bool IsFirstRun { get; private set; }
 
         static SettingsManager()
         {
@@ -275,7 +289,8 @@ namespace ClipTyper
                 try
                 {
                     string targetFile = SettingsFile;
-                    if (File.Exists(targetFile))
+                    IsFirstRun = !File.Exists(targetFile);
+                    if (!IsFirstRun)
                     {
                         string json = File.ReadAllText(targetFile);
                         var loaded = JsonSerializer.Deserialize(json, AppSettingsJsonContext.Default.AppSettings);
@@ -329,6 +344,10 @@ namespace ClipTyper
                             if (!Enum.IsDefined(loaded.CredentialAutoTypeMode))
                             {
                                 loaded.CredentialAutoTypeMode = CredentialMode.Off;
+                            }
+                            if (!Enum.IsDefined(loaded.Theme))
+                            {
+                                loaded.Theme = AppTheme.System;
                             }
 
                             Current = loaded;

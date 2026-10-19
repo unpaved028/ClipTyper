@@ -1,11 +1,10 @@
 using System;
-using System.Drawing;
 using System.Windows.Forms;
 
 namespace ClipTyper
 {
     /// <summary>
-    /// Abstraction for user dialogs, preventing test runners from hanging on MessageBox calls.
+    /// Abstraction for user dialogs, preventing test runners from hanging on dialogs.
     /// </summary>
     public interface IUserPrompt
     {
@@ -16,13 +15,13 @@ namespace ClipTyper
         void ShowWarning(string message, string caption);
 
         /// <summary>
-        /// Displays a Yes/No confirmation dialog and returns true if confirmed (Yes).
+        /// Asks a question and returns true if the user chose the confirm button.
         /// </summary>
-        bool ShowConfirmation(string message, string caption);
+        bool Confirm(ConfirmationRequest request);
     }
 
     /// <summary>
-    /// Default Windows Forms implementation of <see cref="IUserPrompt"/>.
+    /// Default implementation: tray notifications for warnings, task dialogs for questions.
     /// </summary>
     public class WindowsUserPrompt : IUserPrompt
     {
@@ -30,7 +29,7 @@ namespace ClipTyper
 
         /// <param name="notify">
         /// Shows a non-blocking notification (title, message), e.g. a tray balloon.
-        /// Without it, warnings fall back to a message box.
+        /// Without it, warnings fall back to a dialog.
         /// </param>
         public WindowsUserPrompt(Action<string, string>? notify = null)
         {
@@ -45,37 +44,16 @@ namespace ClipTyper
                 return;
             }
 
-            using var owner = CreateTopMostOwner();
-            MessageBox.Show(owner, message, caption, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            using var owner = Dialogs.CreateTopMostOwner();
+            Dialogs.Show(owner, TaskDialogIcon.Warning, caption, message);
         }
 
-        public bool ShowConfirmation(string message, string caption)
+        public bool Confirm(ConfirmationRequest request)
         {
             // Owned by an invisible TopMost window so the question appears above fullscreen
             // RDP / console windows instead of opening unseen behind them.
-            using var owner = CreateTopMostOwner();
-            var result = MessageBox.Show(owner, message, caption, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            return result == DialogResult.Yes;
-        }
-
-        private static Form CreateTopMostOwner()
-        {
-            // Message boxes are centered on their owner: put the invisible 1x1 owner in the middle of
-            // the monitor the user is working on (the target window's monitor).
-            var area = Screen.FromHandle(NativeMethods.GetForegroundWindow()).WorkingArea;
-            var owner = new Form
-            {
-                FormBorderStyle = FormBorderStyle.None,
-                ShowInTaskbar = false,
-                StartPosition = FormStartPosition.Manual,
-                Location = new Point(area.Left + area.Width / 2, area.Top + area.Height / 2),
-                Size = new Size(1, 1),
-                Opacity = 0,
-                TopMost = true
-            };
-            owner.Show();
-            owner.Activate();
-            return owner;
+            using var owner = Dialogs.CreateTopMostOwner();
+            return Dialogs.Confirm(owner, request);
         }
     }
 }

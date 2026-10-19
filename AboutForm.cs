@@ -82,7 +82,7 @@ namespace ClipTyper
             var repoLink = new LinkLabel { Text = "GitHub Repository", AutoSize = true, Margin = new Padding(0, 0, 24, 0) };
             repoLink.LinkClicked += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper");
             var issueLink = new LinkLabel { Text = "Report a Bug", AutoSize = true, Margin = Padding.Empty };
-            issueLink.LinkClicked += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper/issues/new");
+            issueLink.LinkClicked += (_, _) => OpenUrl("https://github.com/unpaved028/ClipTyper/issues/new/choose");
             var linkRow = Row(repoLink, issueLink);
             linkRow.Margin = new Padding(0, 0, 0, 12);
 
@@ -155,6 +155,10 @@ namespace ClipTyper
                 infoLabel, linkRow, buttonRow, _updateLabel, _notesBox, _readMoreLink, _wingetRow, _downloadLink
             });
             Controls.Add(content);
+            foreach (var link in new[] { repoLink, issueLink, _readMoreLink, _downloadLink })
+            {
+                Theme.StyleLink(link);
+            }
 
             AcceptButton = closeBtn;
             CancelButton = closeBtn;

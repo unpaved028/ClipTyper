@@ -20,6 +20,8 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; Uninstall icon
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Same multi-size icon as the app (installer window, setup EXE in Explorer)
+SetupIconFile=media\ClipTyper.ico
 OutputDir=.
 OutputBaseFilename=ClipTyper-Setup
 Compression=lzma
