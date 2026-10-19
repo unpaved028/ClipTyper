@@ -30,7 +30,7 @@ Or grab **[ClipTyper-Setup.exe](https://github.com/unpaved028/ClipTyper/releases
 
 When `Ctrl+V` is blocked or unavailable, retyping passwords and commands by hand is slow and error-prone. ClipTyper reads the Windows clipboard on your trigger and types the text character by character via native `SendInput` — no agents on the remote side, no admin rights required for normal use.
 
-Lightweight alternative to **ClickPaste**, AutoHotkey paste scripts, or on-screen virtual keyboards — with a fullscreen RDP overlay, credential auto-type, Winget installs, and an explicit [zero-telemetry](SECURITY.md) policy.
+A focused alternative to **ClickPaste**, AutoHotkey paste scripts, or on-screen virtual keyboards — with console keyboard layouts (type into a US iLO from a German PC), a fullscreen RDP overlay, credential auto-type, Winget installs, and an explicit [zero-telemetry](SECURITY.md) policy.
 
 ---
 
@@ -41,7 +41,7 @@ Lightweight alternative to **ClickPaste**, AutoHotkey paste scripts, or on-scree
 | **VMware vSphere / VMRC** | Console has no (or blocked) clipboard channel | Delay 30–45 ms · Unicode or VK mode |
 | **Proxmox VE noVNC / SPICE** | Browser console ≠ OS clipboard | Delay 30–45 ms · Unicode · Newline: Enter |
 | **Hyper-V VM Connection** | Limited clipboard bridging | Delay 25–40 ms · Unicode |
-| **Dell iDRAC / HPE iLO / IPMI HTML5** | Canvas console accepts keystrokes only | Delay 40–60 ms · **VK Compatibility Mode** · Target keyboard = server layout |
+| **Dell iDRAC / HPE iLO / IPMI HTML5** | Canvas console accepts keystrokes only | Delay 40–60 ms · **Key presses (VK)** · Keyboard layout = server layout |
 | **KVM-over-IP** (Raritan and similar) | No clipboard pipe into the session | Overlay or hotkey · slower delay if laggy |
 | **RDP / Citrix / Horizon** (clipboard GPO-blocked) | Redirection disabled by policy | Hotkey in windowed mode · **Overlay** in fullscreen |
 | **AWS EC2 / Azure Serial Console** | Raw TTY stream | Delay ~30 ms |
@@ -57,7 +57,7 @@ Lightweight alternative to **ClickPaste**, AutoHotkey paste scripts, or on-scree
 | RDP windowed | Delay `25 ms` · Unicode · `Ctrl + Alt + V` |
 | RDP fullscreen | Delay `25 ms` · Unicode · **Floating Overlay** (`Ctrl + Shift + H` to toggle) |
 | Citrix / Horizon | Delay `35–50 ms` · Unicode or VK |
-| iLO / iDRAC HTML5 | Delay `40–60 ms` · **VK Compatibility Mode** · Target keyboard = server layout |
+| iLO / iDRAC HTML5 | Delay `40–60 ms` · **Key presses (VK)** · Keyboard layout = server layout |
 
 ---
 
@@ -99,15 +99,17 @@ Integrity:
 ## Features
 
 - Paste anywhere paste is blocked — RDP, KVM, web consoles, locked password fields
+- Two typing methods: **characters (Unicode)** for local apps and RDP, or **key presses (VK Compatibility Mode)** for consoles, with a selectable **console keyboard layout** (e.g. type into a US-layout iLO console from a German PC)
+- Switch typing method and console layout right from the tray or overlay menu
 - **Credential Auto-Type** — two-stage username/password with Tab / Newline / custom delimiters
 - Flexible newlines — `Enter`, `Shift + Enter`, `Space`, or `Ignore`
 - Always types the plain-text clipboard content (RTF/HTML formatting is ignored)
-- Optional humanized typing jitter (±1–50 ms)
-- Portable single-exe or non-admin installer
-- `SendInput` Unicode typing + optional **VK Compatibility Mode** with a selectable **target keyboard layout** (e.g. type into a US-layout iLO console from a German PC)
+- Optional humanized typing jitter (±1–50 ms)
 - Escape abort, focus-loss protection, single-instance guard, long-text confirmation, input sanitization
-- Floating **overlay** for fullscreen RDP (edge snap, multi-monitor, scale 25–200%)
+- Floating **overlay** for fullscreen RDP (edge snap, multi-monitor, size 25–200%)
 - Configurable hotkeys (type + overlay toggle)
+- Light and dark mode (follows Windows, or choose in Settings), Windows 11 style menus, crisp icons on scaled displays
+- Portable single-exe or non-admin installer
 - Optional auto update check with tray/overlay badge
 
 ---
@@ -121,49 +123,48 @@ Integrity:
 3. Focus the target window  
 4. Press **`Ctrl + Alt + V`** — ClipTyper types the clipboard  
 
-Press **`Escape`** (or tray **Stop Typing**) to abort.
+Press **`Escape`** (or tray **Stop Typing**) to abort. Double-click the tray icon to open Settings.
 
 ### Remote console with a different keyboard layout
 
 Consoles such as iLO, iDRAC, vSphere/VMRC, or KVM-over-IP pass on key presses, and the server interprets them with its own keyboard layout. If your PC uses German and the server uses US, special characters in passwords come out wrong.
 
-Enable **VK Compatibility Mode** in Settings and set **Target keyboard** to the server's layout (for example *English (United States)*). ClipTyper then presses the keys that produce each character on that layout. Characters the layout cannot produce at all (such as `ä` on a US layout) are listed before typing starts, so a password is never typed wrong silently.
+In **Settings → Keyboard**, choose **Key presses (VK Compatibility Mode)** and set the **keyboard layout** to the server's layout (for example *English (United States)*). ClipTyper then presses the keys that produce each character on that layout. Characters the layout cannot produce at all (such as `ä` on a US layout) are listed before typing starts, so a password is never typed wrong silently.
 
 Switching between consoles: right-click the tray icon or the overlay button and pick **Keyboard layout** (choosing a layout also turns on VK Compatibility Mode) or toggle **VK Compatibility Mode**. In fullscreen RDP / KVM sessions the overlay menu is the one within reach.
 
 ### Overlay (fullscreen RDP / KVM)
 
-Global hotkeys are often captured by the remote session. Enable **Show Overlay Button** in Settings (or toggle with **`Ctrl + Shift + H`**), hover the edge icon, click to type into the previously focused window.
+Global hotkeys are often captured by the remote session. Enable **Show the overlay button** in **Settings → Overlay** (or toggle with **`Ctrl + Shift + H`**), hover the edge icon, click to type into the previously focused window.
 
 ---
 
 ## Settings
 
-Right-click the tray icon → **Settings**:
+Double-click the tray icon (or right-click → **Settings**):
 
-| Setting | Description | Default |
-|---|---|---|
-| **Trigger Hotkey** | Shortcut to start typing | `Ctrl + Alt + V` (installations from v1.7.0 or earlier keep `Ctrl + Shift + T`) |
-| **Keystroke Delay** | Delay between keystrokes (5–100 ms) | 25 ms |
-| **Newline Handling** | `Enter`, `Shift + Enter`, `Space`, or `Ignore` | `Enter` |
-| **Typing Jitter** | Random variance 1–50 ms (default ±5 ms) | Disabled |
-| **Credential Auto-Type** | Two-stage login via delimiter detection (only for text with exactly two parts, e.g. `user<Tab>password`; anything else is typed normally) | Disabled |
-| **Custom Transition Key** | `Tab` or `Enter` between credential parts | `Tab` |
-| **Stage Pause** | Pause between username and password (50–2000 ms) | 200 ms |
-| **Auto-Clear Clipboard** | Clear clipboard after credential typing (skipped if it changed; Windows clipboard history is not cleared) | Disabled |
-| **Clean Text** | Strip BOM, nulls, zero-width chars | Enabled |
-| **Confirm Before Long Text** | Confirm before very long clipboard text | Enabled (> 5,000 chars) |
-| **VK Compatibility Mode** | Map chars to virtual keycodes (Teams / RDP / canvas) | Disabled |
-| **Target Keyboard** | *(VK mode)* Keyboard layout of the remote console; warns before typing characters that layout cannot produce. Caps Lock is switched off while typing and restored afterwards | Same as this PC |
-| **Play Sound Signal** | Sound when typing finishes | Disabled |
-| **Diagnostic Logging** | Local `clip-typer.log` (non-sensitive) | Enabled |
-| **Show Overlay Button** | Floating overlay | Disabled |
-| **Scale** | Overlay size 25–200% | 100% |
-| **Monitor** | Overlay display | Primary |
-| **Overlay Toggle Hotkey** | Show/hide overlay (can disable) | `Ctrl + Shift + H` |
-| **Reset Position** | Reset overlay to default edge position | — |
-| **Run at Startup** | *(Installed)* Start with Windows | Enabled |
-| **Automatically check for updates** | GitHub check on launch (max 1× / 24 h) | Enabled |
+| Tab | Setting | Description | Default |
+|---|---|---|---|
+| Typing | **Type the clipboard** | Hotkey to start typing | `Ctrl + Alt + V` (installations from v1.7.0 or earlier keep `Ctrl + Shift + T`) |
+| Typing | **Delay between keys** | 5–100 ms | 25 ms |
+| Typing | **Humanized timing** | Random variance ±1–50 ms | Off (±5 ms) |
+| Typing | **Line breaks** | `Enter`, `Shift + Enter`, `Space`, or `Ignore` | `Enter` |
+| Typing | **Remove invisible characters** | Strip BOM, zero-width spaces, null bytes | On |
+| Typing | **Ask before typing more than** | Confirm long texts | On (5,000 characters) |
+| Keyboard | **Typing method** | *Characters (Unicode)* for local apps and RDP; *Key presses (VK Compatibility Mode)* for iLO, iDRAC, VMRC, Hyper-V, KVM | Characters |
+| Keyboard | **Keyboard layout** | Layout of the console (key presses only); characters it cannot type are listed before typing. Caps Lock is switched off while typing and restored | Same as this PC |
+| Credentials | **Mode** | Two-stage login for text with exactly two parts (`user<Tab>password`, line break, or custom delimiter) | Disabled |
+| Credentials | **Custom delimiter** | Text between user name and password, then Tab or Enter | — |
+| Credentials | **Pause before password** | 50–2000 ms | 200 ms |
+| Credentials | **Clear the clipboard after** | Only if it still holds the typed credentials; Windows clipboard history is not cleared | Off (5 s) |
+| Overlay | **Show the overlay button** | Floating button for fullscreen RDP / KVM | Off |
+| Overlay | **Size / Monitor / Reset position** | 25–200%, display, default edge position | 100%, primary |
+| Overlay | **Show or hide the overlay with a shortcut** | Toggle hotkey (can be disabled) | `Ctrl + Shift + H` |
+| General | **Theme** | Auto (System), Light, Dark | Auto (System) |
+| General | **Start ClipTyper with Windows** | *(Installed version)* | On |
+| General | **Check for updates automatically** | GitHub check on launch (max 1× / 24 h) | On |
+| General | **Play a sound when typing finishes** | | Off |
+| General | **Write a diagnostic log** | Local `clip-typer.log`, never contains clipboard text; **Open folder** shows it | On |
 
 ---
 
@@ -208,13 +209,27 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 ## Changelog
 
 ### v1.8.0
-- Choose the keyboard layout of the remote console in VK Compatibility Mode, so passwords are typed correctly even when the console uses a different layout (for example a US iLO console from a German PC)
-- Before typing, ClipTyper lists characters that the target keyboard layout cannot produce, instead of typing them wrong
-- Switch VK Compatibility Mode and the keyboard layout directly from the tray menu or the overlay menu, also inside fullscreen remote sessions
-- Characters typed with dead keys (such as ^) or AltGr now come out correctly in VK Compatibility Mode
-- Caps Lock no longer inverts typed letters in VK Compatibility Mode
+**New**
+- Choose the keyboard layout of the remote console, so passwords are typed correctly even when the console uses a different layout (for example a US iLO console from a German PC)
+- Before typing, ClipTyper lists characters that the console keyboard layout cannot produce, instead of typing them wrong
+- Switch the typing method and the keyboard layout directly from the tray menu or the overlay menu, also inside fullscreen remote sessions
+- Light and dark mode: ClipTyper follows the Windows setting, or choose Light or Dark in Settings
+- A short welcome after installing, and a note about new features after an update
+
+**Improved**
+- A clearer Settings window with five tabs: Typing, Keyboard, Credentials, Overlay and General
+- Modern Windows 11 style menus and crisp icons in the notification area, also on scaled displays
+- Questions before typing are clearer, and affected characters stay hidden until you click "Show characters"
+- Characters typed with dead keys (such as ^) or AltGr now come out correctly when typing key presses
+- Caps Lock no longer inverts typed letters when typing key presses
 - Better compatibility with consoles that read key positions (iLO, iDRAC, VMRC, KVM-over-IP)
+- Sharper display on scaled screens (125 %, 150 % and more)
+- Double-click the tray icon to open Settings
+- The diagnostic log notes how each typing run was done (never the text), and Settings can open its folder for bug reports
+- Easier to read update notes in the About dialog
 - New default hotkey Ctrl + Alt + V for new installations, so browser and terminal shortcuts stay free; existing installations keep their hotkey
+
+**Fixed**
 - Hiding the overlay no longer closes ClipTyper
 - The Portable and Slim versions now keep their settings next to the program and no longer add themselves to Windows startup
 - The overlay keeps its size after a restart
@@ -222,8 +237,6 @@ Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 - Credential Auto-Type only reacts to text with exactly two parts, such as user name and password; other multi-line text is typed normally
 - Clipboard auto-clear only clears the clipboard if it still contains the typed credentials
 - Warnings while typing now appear as notifications, and questions appear in front of fullscreen remote sessions
-- Sharper display on scaled screens (125 %, 150 % and more)
-- Easier to read update notes in the About dialog
 - Text with old Mac-style line breaks keeps its line breaks
 - Control characters in copied text are no longer typed, so they cannot trigger shortcuts in the target window
 - Emoji and other special symbols are typed more reliably

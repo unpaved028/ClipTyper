@@ -31,10 +31,14 @@ If applicable, add screenshots to help explain your problem.
  - **Trigger Method:** [ ] Hotkey  [ ] Floating Overlay Button
  - **ClipTyper Settings:**
    - Keystroke Delay: [e.g. 25ms, 50ms]
-   - VK Compatibility Mode: [ ] Enabled  [ ] Disabled
+   - Typing method (Settings > Keyboard): [ ] Characters (Unicode)  [ ] Key presses (VK Compatibility Mode)
+   - Console keyboard layout (key presses only): [e.g. Same as this PC, English (United States)]
    - Newline Handling: [e.g. Enter, Shift+Enter, Space, Ignore]
  - **Keyboard Layout (Host & Target):** [e.g. DE-QWERTZ on host, EN-US on target]
  - **Symptom:** [e.g. Characters dropped, wrong characters/layout mapping, input completely ignored, hotkey intercepted by host/remote]
 
 **Additional context**
-Add any other context or log snippets (`clip-typer.log`) here.
+Add any other context here.
+
+**Diagnostic log**
+Please attach `clip-typer.log`: Settings > General > Open folder. The log never contains clipboard text; each typing run is listed with method, keyboard layout, delay and target program.
