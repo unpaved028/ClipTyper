@@ -75,7 +75,7 @@ winget install unpaved028.ClipTyper
 |---|---|---|---|
 | **Installer** | Non-admin Setup.exe — Start Menu + Autostart | No | **[ClipTyper-Setup.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Setup.exe)** |
 | **Portable** | Self-contained single `.exe` | No | **[ClipTyper-Portable.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Portable.exe)** |
-| **Slim** | ~540 KB; needs .NET 10 Desktop Runtime | [Yes](https://dotnet.microsoft.com/download/dotnet/10.0) | **[ClipTyper-Slim.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Slim.exe)** |
+| **Slim** | Under 1 MB; needs .NET 10 Desktop Runtime | [Yes](https://dotnet.microsoft.com/download/dotnet/10.0) | **[ClipTyper-Slim.exe](https://github.com/unpaved028/ClipTyper/releases/latest/download/ClipTyper-Slim.exe)** |
 
 Not sure? Use the **Installer**.
 
