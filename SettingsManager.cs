@@ -37,17 +37,20 @@ namespace ClipTyper
         public int OverlayMonitorIndex { get; set; }
         public int OverlayX { get; set; } = -1;              // -1 = default (right edge)
         public int OverlayY { get; set; } = -1;              // -1 = default (vertically centered)
+        // false: OverlayX/Y were saved by a DPI-unaware version (logical pixels) and are migrated
+        // once when the overlay is shown; stays false until then, so a save in between keeps it.
+        public bool OverlayPositionDpiAware { get; set; } = true;
 
         // Typing
         public int KeystrokeDelayMs { get; set; } = 25;
         public bool SanitizeInput { get; set; } = true;
         public int MaxTextLengthThreshold { get; set; } = 5000; // 0 = disabled
         public bool EnableVkCompatibilityMode { get; set; }
+        public string TargetKeyboardLayout { get; set; } = KeyboardLayouts.SameAsThisPc; // KLID used in VK mode, "" = same as this PC
         public bool SoundFeedbackEnabled { get; set; }
 
-        // Newline & Formatting (v1.6.0)
+        // Newline handling (v1.6.0)
         public NewlineMode NewlineHandling { get; set; } = NewlineMode.Enter;
-        public bool EnforcePlainText { get; set; }
 
         // Credential Auto-Type (v1.6.0 / v1.6.1)
         public CredentialMode CredentialAutoTypeMode { get; set; }
@@ -61,9 +64,10 @@ namespace ClipTyper
         public bool EnableTypingJitter { get; set; }
         public int TypingJitterRangeMs { get; set; } = 5;
 
-        // Hotkey  (defaults: Ctrl+Shift = 0x0006, T = 0x54)
-        public int HotkeyModifiers { get; set; } = 0x0006;
-        public int HotkeyKey { get; set; } = 0x54;
+        // Hotkey  (defaults: Ctrl+Alt = 0x0003, V = 0x56). Up to v1.7.0 the default was
+        // Ctrl+Shift+T; existing settings.json files keep whatever they have stored.
+        public int HotkeyModifiers { get; set; } = 0x0003;
+        public int HotkeyKey { get; set; } = 0x56;
 
         // Overlay Toggle Hotkey (defaults: Ctrl+Shift = 0x0006, H = 0x48)
         public int OverlayToggleModifiers { get; set; } = 0x0006;
@@ -79,6 +83,12 @@ namespace ClipTyper
 
         // Diagnostic Logging (v1.6.1 / TD-78)
         public bool EnableDiagnosticLogging { get; set; } = true;
+
+        // Appearance (v1.8.0): follow Windows, or always light / dark
+        public AppTheme Theme { get; set; } = AppTheme.System;
+
+        // Version that last ran with these settings (v1.8.0), for the one-time "what's new" notice
+        public string? LastRunVersion { get; set; }
 
         /// <summary>
         /// Creates a shallow clone of the current settings.
@@ -99,15 +109,16 @@ namespace ClipTyper
             OverlayMonitorIndex = source.OverlayMonitorIndex;
             OverlayX = source.OverlayX;
             OverlayY = source.OverlayY;
+            OverlayPositionDpiAware = source.OverlayPositionDpiAware;
 
             KeystrokeDelayMs = source.KeystrokeDelayMs;
             SanitizeInput = source.SanitizeInput;
             MaxTextLengthThreshold = source.MaxTextLengthThreshold;
             EnableVkCompatibilityMode = source.EnableVkCompatibilityMode;
+            TargetKeyboardLayout = source.TargetKeyboardLayout;
             SoundFeedbackEnabled = source.SoundFeedbackEnabled;
 
             NewlineHandling = source.NewlineHandling;
-            EnforcePlainText = source.EnforcePlainText;
 
             CredentialAutoTypeMode = source.CredentialAutoTypeMode;
             CredentialCustomDelimiter = source.CredentialCustomDelimiter;
@@ -131,6 +142,9 @@ namespace ClipTyper
             LastUpdateCheckUtc = source.LastUpdateCheckUtc;
 
             EnableDiagnosticLogging = source.EnableDiagnosticLogging;
+
+            Theme = source.Theme;
+            LastRunVersion = source.LastRunVersion;
         }
     }
 
@@ -185,6 +199,11 @@ namespace ClipTyper
         /// </summary>
         public static AppSettings Current { get; private set; } = new();
 
+        /// <summary>
+        /// True when the last <see cref="Load"/> found no settings file (first start of this installation).
+        /// </summary>
+        public static bool IsFirstRun { get; private set; }
+
         static SettingsManager()
         {
             // For single-file published apps, AppContext.BaseDirectory may point
@@ -195,9 +214,10 @@ namespace ClipTyper
                 ?? AppContext.BaseDirectory;
             ExeDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
 
-            // Check for portable marker file
+            // Portable when the marker file exists, or when this is one of the
+            // release EXEs that are downloaded on their own without the marker.
             string markerPath = Path.Combine(ExeDir, "portable.marker");
-            IsPortable = File.Exists(markerPath);
+            IsPortable = File.Exists(markerPath) || IsPortableExeName(exePath);
 
             if (IsPortable)
             {
@@ -224,6 +244,18 @@ namespace ClipTyper
             }
 
             DefaultSettingsFile = Path.Combine(SettingsDir, "settings.json");
+        }
+
+        /// <summary>
+        /// True for the Portable and Slim release assets (ClipTyper-Portable.exe,
+        /// ClipTyper-Slim.exe), including browser-renamed copies such as
+        /// "ClipTyper-Portable (1).exe".
+        /// </summary>
+        internal static bool IsPortableExeName(string exePath)
+        {
+            string name = Path.GetFileNameWithoutExtension(exePath);
+            return name.StartsWith("ClipTyper-Portable", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("ClipTyper-Slim", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool CheckDirectoryWritable(string dir)
@@ -257,12 +289,18 @@ namespace ClipTyper
                 try
                 {
                     string targetFile = SettingsFile;
-                    if (File.Exists(targetFile))
+                    IsFirstRun = !File.Exists(targetFile);
+                    if (!IsFirstRun)
                     {
                         string json = File.ReadAllText(targetFile);
                         var loaded = JsonSerializer.Deserialize(json, AppSettingsJsonContext.Default.AppSettings);
                         if (loaded != null)
                         {
+                            // Which properties the file really contains (missing ones got class defaults)
+                            using var doc = JsonDocument.Parse(json);
+                            bool InFile(string name) => doc.RootElement.ValueKind == JsonValueKind.Object
+                                && doc.RootElement.TryGetProperty(name, out _);
+
                             // Clamp numerics (TD-26)
                             loaded.KeystrokeDelayMs = Math.Clamp(loaded.KeystrokeDelayMs, 5, 100);
                             loaded.CredentialStageDelayMs = Math.Clamp(loaded.CredentialStageDelayMs, 50, 2000);
@@ -270,8 +308,12 @@ namespace ClipTyper
                             loaded.TypingJitterRangeMs = Math.Clamp(loaded.TypingJitterRangeMs, 1, 50);
                             loaded.MaxTextLengthThreshold = Math.Max(0, loaded.MaxTextLengthThreshold);
 
-                            // Migrate legacy OverlaySize to OverlayScalePercent if applicable
-                            if (loaded.OverlayScalePercent == 100 && !string.IsNullOrEmpty(loaded.OverlaySize))
+                            // Migrate legacy OverlaySize only for old files that contain OverlaySize but no
+                            // OverlayScalePercent yet. OverlaySize is still written with its default, so it
+                            // must not override an explicit 100% scale, and a file without it (e.g. "{}")
+                            // must keep the default scale.
+                            if (!InFile(nameof(AppSettings.OverlayScalePercent)) && InFile(nameof(AppSettings.OverlaySize)) &&
+                                !string.IsNullOrEmpty(loaded.OverlaySize))
                             {
                                 loaded.OverlayScalePercent = loaded.OverlaySize switch
                                 {
@@ -279,6 +321,12 @@ namespace ClipTyper
                                     "Large" => 200,
                                     _ => 100
                                 };
+                            }
+
+                            if (!InFile(nameof(AppSettings.OverlayPositionDpiAware)))
+                            {
+                                // Saved by a version before DPI awareness: only a stored position needs migrating
+                                loaded.OverlayPositionDpiAware = loaded.OverlayX == -1;
                             }
 
                             // Clamp scale percent to valid range (25% to 200%)
@@ -289,9 +337,17 @@ namespace ClipTyper
                             {
                                 loaded.NewlineHandling = NewlineMode.Enter;
                             }
+                            if (!KeyboardLayouts.IsValidKlid(loaded.TargetKeyboardLayout))
+                            {
+                                loaded.TargetKeyboardLayout = KeyboardLayouts.SameAsThisPc;
+                            }
                             if (!Enum.IsDefined(loaded.CredentialAutoTypeMode))
                             {
                                 loaded.CredentialAutoTypeMode = CredentialMode.Off;
+                            }
+                            if (!Enum.IsDefined(loaded.Theme))
+                            {
+                                loaded.Theme = AppTheme.System;
                             }
 
                             Current = loaded;
@@ -342,6 +398,15 @@ namespace ClipTyper
                     }
 
                     string json = JsonSerializer.Serialize(Current, AppSettingsJsonContext.Default.AppSettings);
+
+                    if (File.Exists(targetFile) && NativeMethods.GetHardLinkCount(targetFile) > 1)
+                    {
+                        // Hard-linked file (e.g. Scoop "persist"): replacing it would break the link and the
+                        // settings would be lost on the next update, so overwrite its content in place.
+                        File.WriteAllText(targetFile, json);
+                        return;
+                    }
+
                     string tempFile = targetFile + ".tmp";
                     File.WriteAllText(tempFile, json);
                     File.Move(tempFile, targetFile, overwrite: true);

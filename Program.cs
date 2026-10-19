@@ -11,16 +11,22 @@ namespace ClipTyper
         [STAThread]
         static void Main()
         {
+            // Crisp UI on scaled displays (125 %, 150 %, ...) instead of bitmap-stretched windows
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+            // Before the first window: task dialogs need visual styles (Common Controls 6)
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
             const string mutexName = @"Local\ClipTyper_SingleInstance_Mutex";
             _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
 
             if (!createdNew)
             {
-                MessageBox.Show(
-                    "ClipTyper is already running.",
-                    "ClipTyper",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                Dialogs.Show(
+                    null,
+                    TaskDialogIcon.Information,
+                    "ClipTyper is already running",
+                    "Look for the ClipTyper icon in the notification area of the taskbar. Double-click it for settings, or right-click it for the menu.");
                 return;
             }
 
@@ -35,18 +41,15 @@ namespace ClipTyper
             Application.ThreadException += (s, e) =>
             {
                 Logger.LogError("Unhandled Application Thread Exception", e.Exception);
-                MessageBox.Show(
-                    $"An unexpected error occurred:\n{e.Exception.Message}\n\nDetails have been saved to the log file.",
-                    "ClipTyper Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                Dialogs.Show(
+                    null,
+                    TaskDialogIcon.Error,
+                    "Something went wrong",
+                    $"{e.Exception.Message}\n\nDetails were written to clip-typer.log (Settings > General > Open folder).");
             };
 
             try
             {
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                
                 Logger.LogInfo("ClipTyper started.");
                 Application.Run(new ClipTyperContext());
                 Logger.LogInfo("ClipTyper stopped.");

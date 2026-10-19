@@ -20,16 +20,16 @@ Please list the settings that produced reliable typing without character drops o
 
 | Setting | Value Used |
 |---|---|
-| **Trigger Method** | `Hotkey (Ctrl+Shift+T)` / `Floating Overlay Button` |
+| **Trigger Method** | `Hotkey` / `Floating Overlay Button` |
 | **Keystroke Delay (ms)** | [e.g. 25ms, 40ms, 60ms] |
-| **VK Compatibility Mode** | `Enabled` / `Disabled` |
-| **Plain-Text Mode** | `Enabled` / `Disabled` |
+| **Typing method** | `Characters (Unicode)` / `Key presses (VK Compatibility Mode)` |
+| **Console keyboard layout** | [e.g. Same as this PC, English (United States)] |
 | **Newline Handling** | `Enter` / `Shift + Enter` / `Space` / `Ignore` |
 | **Stage Pause (Credentials)** | [e.g. 200ms, 500ms (if applicable)] |
 
 ---
 
 ### Observations & Tips
-- Did Unicode mode work directly or was VK Compatibility Mode required?
+- Did "Characters (Unicode)" work directly, or were key presses (VK Compatibility Mode) required? Which console keyboard layout?
 - Did character drops occur with default delay (25ms)? If so, what delay was stable?
 - Any specific tips or caveats for other users (e.g. browser focus quirks, fullscreen hotkey capture)?

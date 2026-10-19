@@ -4,44 +4,56 @@ using System.Windows.Forms;
 namespace ClipTyper
 {
     /// <summary>
-    /// Abstraction for user dialogs, preventing test runners from hanging on MessageBox calls.
+    /// Abstraction for user dialogs, preventing test runners from hanging on dialogs.
     /// </summary>
     public interface IUserPrompt
     {
         /// <summary>
-        /// Displays an informational or warning dialog.
+        /// Shows a warning. Non-blocking (tray notification) when a notifier is available,
+        /// so a hidden dialog can never block the next typing run.
         /// </summary>
         void ShowWarning(string message, string caption);
 
         /// <summary>
-        /// Displays a Yes/No confirmation dialog and returns true if confirmed (Yes).
+        /// Asks a question and returns true if the user chose the confirm button.
         /// </summary>
-        bool ShowConfirmation(string message, string caption);
+        bool Confirm(ConfirmationRequest request);
     }
 
     /// <summary>
-    /// Default Windows Forms implementation of <see cref="IUserPrompt"/>.
+    /// Default implementation: tray notifications for warnings, task dialogs for questions.
     /// </summary>
     public class WindowsUserPrompt : IUserPrompt
     {
-        public void ShowWarning(string message, string caption)
+        private readonly Action<string, string>? _notify;
+
+        /// <param name="notify">
+        /// Shows a non-blocking notification (title, message), e.g. a tray balloon.
+        /// Without it, warnings fall back to a dialog.
+        /// </param>
+        public WindowsUserPrompt(Action<string, string>? notify = null)
         {
-            MessageBox.Show(
-                message,
-                caption,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            _notify = notify;
         }
 
-        public bool ShowConfirmation(string message, string caption)
+        public void ShowWarning(string message, string caption)
         {
-            var result = MessageBox.Show(
-                message,
-                caption,
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
+            if (_notify != null)
+            {
+                _notify(caption, message);
+                return;
+            }
 
-            return result == DialogResult.Yes;
+            using var owner = Dialogs.CreateTopMostOwner();
+            Dialogs.Show(owner, TaskDialogIcon.Warning, caption, message);
+        }
+
+        public bool Confirm(ConfirmationRequest request)
+        {
+            // Owned by an invisible TopMost window so the question appears above fullscreen
+            // RDP / console windows instead of opening unseen behind them.
+            using var owner = Dialogs.CreateTopMostOwner();
+            return Dialogs.Confirm(owner, request);
         }
     }
 }
