@@ -1,19 +1,27 @@
 #define MyAppName "ClipTyper"
-#define MyAppVersion "1.7.0"
+; Default for local builds; CI passes the tag version with /DMyAppVersion=...
+#ifndef MyAppVersion
+  #define MyAppVersion "1.8.0"
+#endif
 #define MyAppPublisher "unpaved028"
 #define MyAppExeName "ClipTyper.exe"
+; File version must be numeric: "1.8.0-beta1" -> "1.8.0"
+#define MyAppNumericVersion Copy(MyAppVersion, 1, Pos("-", MyAppVersion + "-") - 1)
 
 [Setup]
 ; Unique AppId for version upgrades
 AppId={{8B8EE0F4-FE28-44A7-8E3B-2A0CE67BCBEF}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppNumericVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={userpf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; Uninstall icon
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Same multi-size icon as the app (installer window, setup EXE in Explorer)
+SetupIconFile=media\ClipTyper.ico
 OutputDir=.
 OutputBaseFilename=ClipTyper-Setup
 Compression=lzma
@@ -43,13 +51,24 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 ; Interactive install: show checkbox to launch the app
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait postinstall; Description: "Launch ClipTyper"; Check: IsNotSilent
-; Silent install (e.g. via Winget): launch automatically in the background
+; Silent install (e.g. via Winget): launch automatically in the background.
+; Pass /NOLAUNCH to skip this (used by the Chocolatey package for unattended installs).
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: IsSilent
 
 [Code]
+function NoLaunchRequested: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/NOLAUNCH') = 0 then
+      Result := True;
+end;
+
 function IsSilent: Boolean;
 begin
-  Result := WizardSilent;
+  Result := WizardSilent and not NoLaunchRequested;
 end;
 
 function IsNotSilent: Boolean;
@@ -64,6 +83,19 @@ begin
   Result := True;
   // Force terminate running ClipTyper process before AppMutex check in silent mode (e.g. Winget)
   if WizardSilent then
+  begin
+    Exec('taskkill.exe', '/f /im ClipTyper.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Sleep(500);
+  end;
+end;
+
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  // Silent uninstall (Winget / Chocolatey) cannot answer the "ClipTyper is running" prompt: close it first
+  if UninstallSilent then
   begin
     Exec('taskkill.exe', '/f /im ClipTyper.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Sleep(500);

@@ -37,7 +37,7 @@ Windows prevents lower-integrity applications from sending input messages to hig
 When using two-stage credential typing:
 1. ClipTyper performs an active focus verification check between Stage 1 (Username) and Stage 2 (Password) to ensure focus was not stolen.
 2. Trailing line terminators are trimmed from the password stage to prevent unintended form submission.
-3. An optional post-type clipboard auto-clear can wipe the clipboard after credential typing. It is off by default. When enabled, ClipTyper waits the configured delay before clearing (default 5 seconds, allowed range 1–60 seconds).
+3. An optional post-type clipboard auto-clear can wipe the clipboard after credential typing. It is off by default. When enabled, ClipTyper waits the configured delay before clearing (default 5 seconds, allowed range 1–60 seconds). The clipboard is only cleared if it still holds the typed text. Windows clipboard history (`Win+V`) and cloud clipboard sync are not cleared; turn them off if you copy credentials.
 
 ---
 
@@ -56,6 +56,7 @@ ClipTyper is 100% open-source C# with no obfuscation. We encourage security team
 
 If you discover a potential security vulnerability in ClipTyper, please report it privately:
 
+* **GitHub (preferred):** [Report a vulnerability](https://github.com/unpaved028/ClipTyper/security/advisories/new). Only you and the maintainer can see the report.
 * **Email:** `cliptyper-support.payroll373@passmail.com`
 * **Response SLA:** We commit to acknowledging receipt within 48 hours and providing regular remediation updates.
 * **Public Disclosure:** Please do not open public GitHub issues for undisclosed vulnerabilities until a fix has been coordinated.

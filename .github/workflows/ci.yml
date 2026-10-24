@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run Unit Tests
+        run: dotnet test ClipTyper.sln -c Release --verbosity normal
+
+      # The installer is only built on release tags (build.yml); compile it here too so
+      # mistakes in setup.iss show up before a release.
+      - name: Publish installer payload
+        run: dotnet publish ClipTyper.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true -o ./publish-winget
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compile Inno Setup Installer
+        run: iscc setup.iss
+
+      # Checks the two installer behaviours Chocolatey relies on: /NOLAUNCH keeps ClipTyper closed
+      # after a silent install, and a silent uninstall succeeds while ClipTyper is running.
+      - name: Installer smoke test
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\ClipTyper'
+          $app = Join-Path $installDir 'ClipTyper.exe'
+
+          Start-Process .\ClipTyper-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/NOLAUNCH' -Wait
+          if (-not (Test-Path $app)) { throw "ClipTyper.exe was not installed" }
+          Start-Sleep -Seconds 5
+          if (Get-Process ClipTyper -ErrorAction SilentlyContinue) { throw "/NOLAUNCH: ClipTyper was started after the silent install" }
+          Write-Host "OK: /NOLAUNCH did not start ClipTyper"
+
+          Start-Process $app
+          Start-Sleep -Seconds 5
+          if (-not (Get-Process ClipTyper -ErrorAction SilentlyContinue)) { throw "ClipTyper did not start" }
+
+          # The Inno uninstaller relaunches itself from %TEMP% and returns at once, so wait for the result
+          $uninstaller = Get-ChildItem $installDir -Filter 'unins*.exe' | Select-Object -First 1
+          Start-Process $uninstaller.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Test-Path $app) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+          if (Test-Path $app) { throw "Silent uninstall did not remove ClipTyper.exe while ClipTyper was running" }
+          if (Get-Process ClipTyper -ErrorAction SilentlyContinue) { throw "ClipTyper is still running after the silent uninstall" }
+          Write-Host "OK: silent uninstall worked while ClipTyper was running"
+
+      - name: Compile Inno Setup Installer (pre-release version)
+        run: iscc /DMyAppVersion=9.9.9-beta1 setup.iss
