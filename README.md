@@ -19,10 +19,10 @@ Or grab **[ClipTyper-Setup.exe](https://github.com/unpaved028/ClipTyper/releases
 > **Official downloads only from GitHub Releases or Winget.** Third-party mirrors (including Softonic) may ship outdated or wrapped builds.
 
 <p align="center">
-  <img src="media/github-social-preview.png" alt="ClipTyper overlay on an HPE iLO remote console login — clipboard typed as keystrokes where paste is blocked" width="920" />
+  <img src="media/cliptyper-demo.gif" alt="In a remote console Ctrl+V does nothing; after Ctrl+Alt+V, ClipTyper types the clipboard as key presses" width="920" />
 </p>
 
-<p align="center"><sub>HPE iLO remote console: paste is blocked, ClipTyper types the clipboard as keystrokes (overlay on the right).</sub></p>
+<p align="center"><sub>Demo console that only accepts key presses, like iLO, iDRAC or noVNC: Ctrl+V does nothing, Ctrl+Alt+V types the clipboard.</sub></p>
 
 ---
 
@@ -49,6 +49,12 @@ A focused alternative to **ClickPaste**, AutoHotkey paste scripts, or on-screen 
 | **Paste-blocked web/password fields** | `onpaste` / JS blocks clipboard | Credential Auto-Type · optional clipboard auto-clear |
 
 > Tested another console? Open a [Target Compatibility Report](https://github.com/unpaved028/ClipTyper/issues/new?template=target_compatibility.md).
+
+<p align="center">
+  <img src="media/github-social-preview.png" alt="ClipTyper overlay on an HPE iLO remote console login — clipboard typed as keystrokes where paste is blocked" width="720" />
+</p>
+
+<p align="center"><sub>HPE iLO remote console: paste is blocked, ClipTyper types the clipboard as keystrokes (overlay on the right).</sub></p>
 
 ### Quick settings cheat sheet
 
