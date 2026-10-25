@@ -18,11 +18,11 @@
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <releaseNotes>https://github.com/unpaved028/ClipTyper/releases/tag/v1.8.0</releaseNotes>
     <tags>cliptyper clipboard keystrokes sendinput paste rdp ilo idrac kvm vmware proxmox hyper-v sysadmin foss</tags>
-    <summary>Types clipboard text as keystrokes where paste is blocked: VM consoles, iLO/iDRAC, KVM-over-IP, RDP and paste-blocked fields.</summary>
+    <summary>Types clipboard text as keystrokes where paste is not available: VM consoles, iLO/iDRAC, KVM-over-IP and remote sessions.</summary>
     <description><![CDATA[
 **The last mile for text that cannot be pasted.**
 
-ClipTyper reads the Windows clipboard on a hotkey (default `Ctrl+Alt+V`) or a floating overlay button and types the text as keystrokes into the active window. It is made for places where `Ctrl+V` does not work: VMware vSphere / VMRC, Proxmox noVNC, Hyper-V, Dell iDRAC, HPE iLO, KVM-over-IP, RDP sessions with clipboard redirection disabled, and paste-blocked password fields.
+ClipTyper reads the Windows clipboard on a hotkey (default `Ctrl+Alt+V`) or a floating overlay button and types the text as keystrokes into the active window. It is made for places where `Ctrl+V` does not work: VMware vSphere / VMRC, Proxmox noVNC, Hyper-V, Dell iDRAC, HPE iLO, KVM-over-IP, remote desktop sessions without a shared clipboard, and web forms that do not accept paste.
 
 ### Features
 - Unicode typing or VK Compatibility Mode with a selectable target keyboard layout (type into a US-layout console from a German PC)

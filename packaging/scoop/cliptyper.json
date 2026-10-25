@@ -1,6 +1,6 @@
 {
     "version": "1.8.0",
-    "description": "Types clipboard text as keystrokes where paste is blocked: VM consoles, iLO/iDRAC, KVM-over-IP, RDP and paste-blocked fields.",
+    "description": "Types clipboard text as keystrokes where paste is not available: VM consoles, iLO/iDRAC, KVM-over-IP and remote sessions.",
     "homepage": "https://github.com/unpaved028/ClipTyper",
     "license": "MIT",
     "notes": [

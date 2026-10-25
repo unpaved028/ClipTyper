@@ -2,7 +2,7 @@
 
 **The last mile for text that cannot be pasted.**
 
-Type clipboard text as simulated keystrokes to bypass paste restrictions in VM consoles (vSphere, Proxmox, Hyper-V), iDRAC/iLO, RDP sessions, and paste-blocked fields.
+Types clipboard text as keystrokes where paste is not available: VM consoles (vSphere, Proxmox, Hyper-V), iDRAC/iLO and KVM-over-IP consoles, serial consoles and remote sessions without a shared clipboard.
 
 [![Latest Release](https://img.shields.io/github/v/release/unpaved028/ClipTyper?label=latest%20release&color=0B5FFF)](https://github.com/unpaved028/ClipTyper/releases/latest)
 [![WinGet](https://img.shields.io/badge/winget-unpaved028.ClipTyper-0B5FFF)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/u/unpaved028/ClipTyper)
@@ -28,7 +28,7 @@ Or grab **[ClipTyper-Setup.exe](https://github.com/unpaved028/ClipTyper/releases
 
 ## Why ClipTyper?
 
-When `Ctrl+V` is blocked or unavailable, retyping passwords and commands by hand is slow and error-prone. ClipTyper reads the Windows clipboard on your trigger and types the text character by character via native `SendInput` — no agents on the remote side, no admin rights required for normal use.
+When `Ctrl+V` is not available, retyping passwords and commands by hand is slow and error-prone. ClipTyper reads the Windows clipboard on your trigger and types the text character by character via native `SendInput` — no agents on the remote side, no admin rights required for normal use.
 
 A focused alternative to **ClickPaste**, AutoHotkey paste scripts, or on-screen virtual keyboards — with console keyboard layouts (type into a US iLO from a German PC), a fullscreen RDP overlay, credential auto-type, Winget installs, and an explicit [zero-telemetry](SECURITY.md) policy.
 
@@ -38,23 +38,23 @@ A focused alternative to **ClickPaste**, AutoHotkey paste scripts, or on-screen 
 
 | Environment | Why paste fails | What to use |
 |---|---|---|
-| **VMware vSphere / VMRC** | Console has no (or blocked) clipboard channel | Delay 30–45 ms · Unicode or VK mode |
+| **VMware vSphere / VMRC** | Console has no clipboard channel | Delay 30–45 ms · Unicode or VK mode |
 | **Proxmox VE noVNC / SPICE** | Browser console ≠ OS clipboard | Delay 30–45 ms · Unicode · Newline: Enter |
 | **Hyper-V VM Connection** | Limited clipboard bridging | Delay 25–40 ms · Unicode |
 | **Dell iDRAC / HPE iLO / IPMI HTML5** | Canvas console accepts keystrokes only | Delay 40–60 ms · **Key presses (VK)** · Keyboard layout = server layout |
 | **KVM-over-IP** (Raritan and similar) | No clipboard pipe into the session | Overlay or hotkey · slower delay if laggy |
-| **RDP / Citrix / Horizon** (clipboard GPO-blocked) | Redirection disabled by policy | Hotkey in windowed mode · **Overlay** in fullscreen |
+| **RDP / Citrix / Horizon** without a shared clipboard | Clipboard redirection is not available in the session | Hotkey in windowed mode · **Overlay** in fullscreen |
 | **AWS EC2 / Azure Serial Console** | Raw TTY stream | Delay ~30 ms |
 | **MS Teams / Zoom remote control** | Viewer clipboard not bridged | **VK Compatibility Mode** · Newline: Shift+Enter for chat |
-| **Paste-blocked web/password fields** | `onpaste` / JS blocks clipboard | Credential Auto-Type · optional clipboard auto-clear |
+| **Web forms that do not accept paste** | The page ignores paste events | Credential Auto-Type · optional clipboard auto-clear |
 
 > Tested another console? Open a [Target Compatibility Report](https://github.com/unpaved028/ClipTyper/issues/new?template=target_compatibility.md).
 
 <p align="center">
-  <img src="media/github-social-preview.png" alt="ClipTyper overlay on an HPE iLO remote console login — clipboard typed as keystrokes where paste is blocked" width="720" />
+  <img src="media/github-social-preview.png" alt="ClipTyper overlay on an HPE iLO remote console login — clipboard typed as keystrokes where paste is not available" width="720" />
 </p>
 
-<p align="center"><sub>HPE iLO remote console: paste is blocked, ClipTyper types the clipboard as keystrokes (overlay on the right).</sub></p>
+<p align="center"><sub>HPE iLO remote console without paste: ClipTyper types the clipboard as keystrokes (overlay on the right).</sub></p>
 
 ### Quick settings cheat sheet
 
@@ -96,6 +96,7 @@ Not sure? Use the **Installer**.
 
 Integrity:
 - Checksums: [`SHA256SUMS.txt`](https://github.com/unpaved028/ClipTyper/releases/latest) on every release
+- [Code signing policy](CODE_SIGNING.md): releases are not code-signed yet
 - **ClipTyper-Setup.exe (v1.8.0)** SHA-256: `d115c50fbdbea9e48f90871cf70c3650bb146c10521d086335d770b3b2ef48fc`
 - VirusTotal: [**0 of 68**](https://www.virustotal.com/gui/file/d115c50fbdbea9e48f90871cf70c3650bb146c10521d086335d770b3b2ef48fc) on the v1.8.0 installer (re-scanned 25 October 2026). A Microsoft Defender false positive was removed by Microsoft the same day; see [SECURITY.md](SECURITY.md#known-false-positive-microsoft-defender-flags-the-v180-installer).
 
@@ -107,13 +108,14 @@ Integrity:
 - **Clipboard stays local** — read only when you trigger typing; never written to disk or sent to a server.
 - **Almost offline** — the only network call is an optional GitHub Releases update check. It is on by default and can be turned off in Settings. No other outbound traffic.
 - **Open source (MIT)** — review the code; verify release checksums.
+- **Code signing policy** — how releases are built, approved and (once set up) signed: [CODE_SIGNING.md](CODE_SIGNING.md).
 - **UIPI respected** — non-elevated ClipTyper will not silently type into Administrator windows.
 
 ---
 
 ## Features
 
-- Paste anywhere paste is blocked — RDP, KVM, web consoles, locked password fields
+- Works where paste is not available — KVM and VM consoles, iLO/iDRAC, serial consoles, remote sessions without a shared clipboard
 - Two typing methods: **characters (Unicode)** for local apps and RDP, or **key presses (VK Compatibility Mode)** for consoles, with a selectable **console keyboard layout** (e.g. type into a US-layout iLO console from a German PC)
 - Switch typing method and console layout right from the tray or overlay menu
 - **Credential Auto-Type** — two-stage username/password with Tab / Newline / custom delimiters
