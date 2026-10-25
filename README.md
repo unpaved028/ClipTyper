@@ -75,6 +75,15 @@ A focused alternative to **ClickPaste**, AutoHotkey paste scripts, or on-screen 
 winget install unpaved028.ClipTyper
 ```
 
+### Scoop
+
+```powershell
+scoop bucket add unpaved028 https://github.com/unpaved028/scoop-bucket
+scoop install unpaved028/cliptyper
+```
+
+Installs the Portable build; settings are kept across `scoop update`.
+
 ### Manual download
 
 | Variant | Description | .NET Runtime? | Download |
