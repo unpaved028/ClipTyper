@@ -10,7 +10,7 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/unpaved028/ClipTyper/releases/download/v1.8.0/ClipTyper-Portable.exe",
-            "hash": "REPLACE_WITH_SHA256_OF_ClipTyper-Portable.exe_FROM_SHA256SUMS.txt"
+            "hash": "b54e111f7c77bf38f6a1583eeb4ca138faa2edfeaf60640967ee5e108e756e1b"
         }
     },
     "pre_install": "if (!(Test-Path \"$persist_dir\\settings.json\")) { Set-Content \"$dir\\settings.json\" '{}' -Encoding ascii }",
