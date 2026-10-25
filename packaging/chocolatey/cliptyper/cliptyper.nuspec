@@ -5,9 +5,11 @@
     <version>1.8.0</version>
     <title>ClipTyper</title>
     <authors>unpaved028</authors>
-    <!-- Your Chocolatey community account name -->
-    <owners>REPLACE_WITH_CHOCOLATEY_USERNAME</owners>
+    <!-- Chocolatey community account name of the maintainer -->
+    <owners>unpaved028</owners>
     <projectUrl>https://github.com/unpaved028/ClipTyper</projectUrl>
+    <iconUrl>https://cdn.jsdelivr.net/gh/unpaved028/ClipTyper@master/media/ClipTyper_256.png</iconUrl>
+    <copyright>Copyright (c) 2026 unpaved028</copyright>
     <projectSourceUrl>https://github.com/unpaved028/ClipTyper</projectSourceUrl>
     <packageSourceUrl>https://github.com/unpaved028/ClipTyper/tree/master/packaging/chocolatey</packageSourceUrl>
     <docsUrl>https://github.com/unpaved028/ClipTyper#readme</docsUrl>
