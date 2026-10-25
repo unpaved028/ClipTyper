@@ -18,6 +18,8 @@ Or grab **[ClipTyper-Setup.exe](https://github.com/unpaved028/ClipTyper/releases
 
 > **Official downloads only from GitHub Releases or Winget.** Third-party mirrors (including Softonic) may ship outdated or wrapped builds.
 
+> **Known issue (25 October 2026):** Microsoft Defender flags the v1.8.0 installer as `Trojan:Win32/Wacatac.B!ml`, which can also stop `winget upgrade`. It is a false positive of Defender's machine-learning detection (1 of 69 scanners on VirusTotal) and has been reported to Microsoft. [Details and what you can do](SECURITY.md#known-false-positive-microsoft-defender-flags-the-v180-installer).
+
 <p align="center">
   <img src="media/cliptyper-demo.gif" alt="In a remote console Ctrl+V does nothing; after Ctrl+Alt+V, ClipTyper types the clipboard as key presses" width="920" />
 </p>
@@ -97,7 +99,7 @@ Not sure? Use the **Installer**.
 Integrity:
 - Checksums: [`SHA256SUMS.txt`](https://github.com/unpaved028/ClipTyper/releases/latest) on every release
 - **ClipTyper-Setup.exe (v1.8.0)** SHA-256: `d115c50fbdbea9e48f90871cf70c3650bb146c10521d086335d770b3b2ef48fc`
-- VirusTotal: [**0 detections**](https://www.virustotal.com/gui/file/bbaa17b32de4b381edbe98277b0a0a342331947b2e0f96c47d19276545a25c4c) on the v1.7.0 installer (rescan 7 October 2026). 68 engines reported no detection; 2 returned no result. Microsoft does not flag this file. Unsigned `SendInput` tools can still trip heuristics — see [SECURITY.md](SECURITY.md).
+- VirusTotal: [**1 of 69**](https://www.virustotal.com/gui/file/d115c50fbdbea9e48f90871cf70c3650bb146c10521d086335d770b3b2ef48fc) on the v1.8.0 installer (25 October 2026). Only Microsoft Defender reports `Trojan:Win32/Wacatac.B!ml`, a machine-learning false positive that has been reported to Microsoft; the other 68 engines find nothing. See [SECURITY.md](SECURITY.md#known-false-positive-microsoft-defender-flags-the-v180-installer).
 
 ---
 
